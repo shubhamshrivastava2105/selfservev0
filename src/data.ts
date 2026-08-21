@@ -73,6 +73,15 @@ export function readDomain(email: string): {
 }
 export const LEGAL_ENTITY = 'Neoflo Inc.';
 
+/**
+ * A second set of books in the same workspace.
+ *
+ * Real AP runs across entities, and reporting has a per-entity cut because that
+ * is a question people actually ask. One entity would make that cut a single
+ * 100% bar, which teaches nothing about the metric.
+ */
+export const LEGAL_ENTITY_WEST = 'Neoflo West LLC';
+
 /** Where the user last visited, for the returning-visit briefing (Journey §2). */
 const NOW_HOUR = NOW.getHours();
 const NOW_MINUTE = NOW.getMinutes();
@@ -167,6 +176,8 @@ export const DEFAULT_CONFIG: WorkflowConfig = {
   vendorFuzzyThreshold: 90,
   memoryThreshold: 3,
   duplicateKeys: ['Invoice number', 'Vendor', 'Legal entity'],
+  monthlyPostingTarget: 20,
+  manualBaselineMinutes: 6,
 };
 
 /**
@@ -587,7 +598,7 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     id: 'inv-90448',
     number: 'INV-90448',
     vendor: 'Bayline Freight',
-    legalEntity: LEGAL_ENTITY,
+    legalEntity: LEGAL_ENTITY_WEST,
     currency: 'USD',
     amount: 3480.0,
     invoiceDate: at(1, 11, 20),
@@ -766,7 +777,7 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     id: 'inv-44320',
     number: 'INV-44320',
     vendor: 'Cascade Industrial Parts',
-    legalEntity: LEGAL_ENTITY,
+    legalEntity: LEGAL_ENTITY_WEST,
     currency: 'USD',
     amount: 21900.0,
     invoiceDate: at(7),
@@ -898,7 +909,7 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     id: 'inv-33128',
     number: 'INV-33128',
     vendor: 'Redwood Office Supply',
-    legalEntity: LEGAL_ENTITY,
+    legalEntity: LEGAL_ENTITY_WEST,
     currency: 'USD',
     amount: 9340.0,
     invoiceDate: at(6),
@@ -1028,7 +1039,7 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     id: 'inv-22016',
     number: 'INV-22016',
     vendor: 'Harbor Print Co',
-    legalEntity: LEGAL_ENTITY,
+    legalEntity: LEGAL_ENTITY_WEST,
     currency: 'USD',
     amount: 1120.0,
     invoiceDate: at(9),

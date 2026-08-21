@@ -298,6 +298,17 @@ export interface WorkflowConfig {
   vendorFuzzyThreshold: number;
   memoryThreshold: number;
   duplicateKeys: string[];
+  /**
+   * What the workspace expects to post in a month. Reporting reads coverage
+   * against it, pro-rated to whatever window is on screen — so the target is
+   * the workspace's own number rather than one reporting made up.
+   */
+  monthlyPostingTarget: number;
+  /**
+   * Minutes an invoice took before this workflow existed. Every SLA figure is
+   * read against it: a percentile means nothing without the thing it beat.
+   */
+  manualBaselineMinutes: number;
 }
 
 /* ── Connections ──────────────────────────────────────────────────────── */

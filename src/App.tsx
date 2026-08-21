@@ -6,7 +6,8 @@ import { AskNeoScreen } from './screens/AskNeo';
 import { QueueScreen } from './screens/Queue';
 import { InvoiceDetailScreen } from './screens/InvoiceDetail';
 import { WorkflowConfigScreen, WorkspaceConfigScreen } from './screens/Settings';
-import { MembersScreen, ReportingScreen } from './screens/People';
+import { MembersScreen } from './screens/People';
+import { ReportingScreen } from './screens/Reporting';
 
 function Router() {
   const { screen, profile } = useStore();
