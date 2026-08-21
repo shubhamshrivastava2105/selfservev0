@@ -156,8 +156,8 @@ export const SCENARIOS: Scenario[] = [
   {
     id: 'memory-about-to-form',
     group: 'Memory',
-    label: 'One acknowledgment from a memory',
-    detail: 'An uploaded Redwood invoice at coding. Set the GL to 6200 and the memory forms.',
+    label: 'One correction from a memory',
+    detail: 'A Cascade invoice at posting. Set a line to US-CA-SALES-7.25 and the memory forms.',
   },
 
   {

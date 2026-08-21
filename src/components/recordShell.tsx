@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Box, Button, IconButton, Stack, Tooltip, Typography } from '@neofloai/atoms';
 import {
+  ArrowRightIcon,
   ClockCounterClockwiseIcon,
   FileTextIcon,
   ListIcon,
@@ -79,6 +80,7 @@ export function RecordHeader({
   onToggleRail,
   onAskNeo,
   onReject,
+  rejectDisabled,
   primary,
   secondary,
 }: {
@@ -87,8 +89,10 @@ export function RecordHeader({
   onToggleRail: () => void;
   onAskNeo?: () => void;
   onReject?: () => void;
-  /** Proceed, Validate or Post: whatever moves this stage on. */
+  /** Proceed or Validate: whatever moves this stage on. Carries a trailing arrow. */
   primary?: { label: string; disabled?: boolean; onClick: () => void };
+  /** Reject shows disabled rather than vanishing once a record is closed. */
+  rejectDisabled?: boolean;
   /** Simulate, on the posting stage. */
   secondary?: { label: string; disabled?: boolean; onClick: () => void };
 }) {
@@ -153,7 +157,13 @@ export function RecordHeader({
           </Button>
         )}
         {onReject && (
-          <Button variant="error" appearance="outline" size="sm" onClick={onReject}>
+          <Button
+            variant="error"
+            appearance="outline"
+            size="sm"
+            disabled={rejectDisabled}
+            onClick={onReject}
+          >
             Reject
           </Button>
         )}
@@ -169,7 +179,12 @@ export function RecordHeader({
           </Button>
         )}
         {primary && (
-          <Button size="sm" disabled={primary.disabled} onClick={primary.onClick}>
+          <Button
+            size="sm"
+            endIcon={<ArrowRightIcon size={16} />}
+            disabled={primary.disabled}
+            onClick={primary.onClick}
+          >
             {primary.label}
           </Button>
         )}

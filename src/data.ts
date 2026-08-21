@@ -294,6 +294,30 @@ export const MEMORY_PATTERNS: MemoryPattern[] = [
   },
 ];
 
+/**
+ * Where each field sits on the page, as percentages. The document facsimile is
+ * drawn from these same coordinates, so a highlight always lands exactly on the
+ * text it refers to.
+ */
+export const FIELD_REGIONS: Record<
+  string,
+  { page: number; x: number; y: number; w: number; h: number }
+> = {
+  vendor: { page: 1, x: 6, y: 4, w: 46, h: 4.5 },
+  vendorCode: { page: 1, x: 6, y: 9, w: 46, h: 3.5 },
+  vendorTaxId: { page: 1, x: 6, y: 13, w: 46, h: 3.5 },
+  number: { page: 1, x: 6, y: 25, w: 22, h: 4.5 },
+  date: { page: 1, x: 30, y: 25, w: 21, h: 4.5 },
+  dueDate: { page: 1, x: 53, y: 25, w: 21, h: 4.5 },
+  po: { page: 1, x: 76, y: 25, w: 20, h: 4.5 },
+  terms: { page: 1, x: 6, y: 32, w: 26, h: 4 },
+  currency: { page: 1, x: 34, y: 32, w: 16, h: 4 },
+  taxCode: { page: 1, x: 52, y: 32, w: 24, h: 4 },
+  subtotal: { page: 1, x: 64, y: 74, w: 32, h: 4 },
+  tax: { page: 1, x: 64, y: 79, w: 32, h: 4 },
+  total: { page: 1, x: 64, y: 84, w: 32, h: 5 },
+};
+
 /* ── Field builders ───────────────────────────────────────────────────── */
 
 function field(
@@ -353,6 +377,7 @@ function invoiceFields(
   return rows.map(([key, label, value, mandatory, learnable]) => ({
     ...field(key, label, value, c(key), mandatory, learnable),
     poValue: poOverrides[key] ?? value,
+    region: FIELD_REGIONS[key],
   }));
 }
 

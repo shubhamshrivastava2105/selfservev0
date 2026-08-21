@@ -19,7 +19,7 @@ import {
   Typography,
 } from '@neofloai/atoms';
 import { FilePdfIcon, ScissorsIcon, UploadSimpleIcon } from '@neofloai/atoms/icons';
-import { GL_CODES, VAT_CODES, WHT_CODES } from '../../data';
+import { VAT_CODES, WHT_CODES } from '../../data';
 import { useStore } from '../../store';
 import { money } from '../../engine';
 import type { Invoice } from '../../types';
@@ -33,7 +33,7 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
   const erp = invoice.erp;
 
   const readOnly = ['Posted', 'Exported', 'Rejected'].includes(invoice.status);
-  const missingCodes = invoice.lines.filter((l) => l.gl === '').length;
+  const missingTax = invoice.lines.filter((l) => l.vat === '' || l.wht === '').length;
 
   const fixed = (label: string, value: string) => (
     <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
@@ -58,12 +58,43 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
     <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
       <Stack sx={{ p: 3, gap: 3 }}>
         {erp.simulated && (
-          <Alert
-            severity={erp.simulated.ok ? 'success' : 'error'}
-            title={erp.simulated.ok ? 'Simulation passed' : 'Simulation failed'}
-          >
-            {erp.simulated.message}
-          </Alert>
+          <Stack sx={{ gap: 1.5 }}>
+            <Alert
+              severity={erp.simulated.ok ? 'success' : 'error'}
+              title={erp.simulated.ok ? 'Simulation passed' : 'Simulation failed'}
+            >
+              {erp.simulated.message}
+            </Alert>
+
+            {/* The GL account is the ERP's answer, not the user's input, so it
+                only exists once the payload has been dry-run. */}
+            {erp.simulated.lines.length > 0 && (
+              <TableContainer sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                <Table size="sm">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ fontFamily: 'mono', width: '100%' }}>
+                        Line the ERP will post
+                      </TableCell>
+                      <TableCell sx={{ fontFamily: 'mono' }}>GL Account</TableCell>
+                      <TableCell sx={{ fontFamily: 'mono' }} align="right">
+                        Tax
+                      </TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {erp.simulated.lines.map((l) => (
+                      <TableRow key={l.lineId}>
+                        <TableCell>{l.description}</TableCell>
+                        <TableCell>{l.gl}</TableCell>
+                        <TableCell align="right">{money(l.taxAmount, invoice.currency)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </Stack>
         )}
 
         {!connections.zohoBooks && (
@@ -122,9 +153,9 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
           </Stack>
         </Stack>
 
-        {missingCodes > 0 && (
-          <Alert severity="warning" title={`${missingCodes} lines have no GL account`}>
-            Every line needs one before this can post.
+        {missingTax > 0 && (
+          <Alert severity="warning" title={`${missingTax} lines have no tax code`}>
+            Every line needs a VAT and WHT code before the ERP will accept the payload.
           </Alert>
         )}
 
@@ -140,7 +171,6 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
                 </TableCell>
                 <TableCell sx={{ fontFamily: 'mono', minWidth: 180 }}>VAT Tax Code *</TableCell>
                 <TableCell sx={{ fontFamily: 'mono', minWidth: 160 }}>WHT Tax Code *</TableCell>
-                <TableCell sx={{ fontFamily: 'mono', minWidth: 210 }}>GL Account *</TableCell>
                 <TableCell padding="checkbox" />
               </TableRow>
             </TableHead>
@@ -174,23 +204,6 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
                       fullWidth
                     >
                       {WHT_CODES.map((code) => (
-                        <MenuItem key={code} value={code}>
-                          {code}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </TableCell>
-                  <TableCell padding="none" sx={{ pr: 1 }}>
-                    <Select
-                      label="GL account"
-                      value={l.gl}
-                      status={l.gl === '' ? 'warning' : undefined}
-                      disabled={readOnly}
-                      onChange={(event) => setLineCode(invoice.id, l.id, 'gl', String(event.target.value))}
-                      fullWidth
-                    >
-                      <MenuItem value="">Not assigned</MenuItem>
-                      {GL_CODES.map((code) => (
                         <MenuItem key={code} value={code}>
                           {code}
                         </MenuItem>

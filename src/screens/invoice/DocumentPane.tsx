@@ -1,98 +1,237 @@
 import * as React from 'react';
-import { Box, IconButton, Stack, Tooltip, Typography } from '@neofloai/atoms';
+import { Box, Button, Chip, IconButton, Stack, TextField, Tooltip, Typography } from '@neofloai/atoms';
 import {
-  ArrowCounterClockwiseIcon,
   ArrowClockwiseIcon,
+  ArrowCounterClockwiseIcon,
   CaretLeftIcon,
   CaretRightIcon,
   MagnifyingGlassMinusIcon,
   MagnifyingGlassPlusIcon,
+  SealCheckIcon,
+  WarningIcon,
+  XIcon,
 } from '@neofloai/atoms/icons';
-import type { Invoice } from '../../types';
+import { useStore } from '../../store';
+import { confidenceTone } from '../../components/common';
+import type { ExtractedField, Invoice } from '../../types';
+
+const PAGES = 6;
 
 /**
- * The source document beside its extracted values, with the viewer controls the
- * product carries: zoom, rotate, and page navigation.
+ * The source document, and the evidence for a value.
  *
- * The page itself is drawn rather than rendered, because there is no real PDF
- * behind this. Everything around it behaves.
+ * The page is drawn from the same coordinates the fields carry, so selecting a
+ * field always highlights exactly the text it was read from. Confidence lives
+ * here, beside the evidence, rather than on the field in the panel: a score is
+ * only meaningful next to what produced it.
  */
-export function DocumentPane({ invoice, pages = 6 }: { invoice: Invoice; pages?: number }) {
+export function DocumentPane({
+  invoice,
+  selected,
+  onSelect,
+}: {
+  invoice: Invoice;
+  selected: ExtractedField | null;
+  onSelect: (key: string | null) => void;
+}) {
+  const { config, editField } = useStore();
   const [zoom, setZoom] = React.useState(100);
   const [rotation, setRotation] = React.useState(0);
   const [page, setPage] = React.useState(1);
+  const [draft, setDraft] = React.useState('');
+
+  // Selecting a field takes you to the page it was read from.
+  React.useEffect(() => {
+    if (selected?.region) setPage(selected.region.page);
+    setDraft(selected?.value ?? '');
+  }, [selected?.key, selected?.value, selected?.region]);
+
+  const placed = invoice.invoiceFields.filter((f) => f.region && f.region.page === page);
+  const tone = selected ? confidenceTone(selected.confidence, config.confidenceThreshold) : 'clear';
+  const low = tone === 'amber' || tone === 'red';
+
+  const commit = () => {
+    if (selected && draft !== selected.value) editField(invoice.id, 'invoice', selected.key, draft);
+  };
 
   return (
     <Stack sx={{ flex: 1, minWidth: 0, borderRight: '1px solid', borderColor: 'divider' }}>
       <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', p: 3, backgroundColor: 'action.hover' }}>
         <Box
           sx={{
-            width: `${Math.min(zoom, 160)}%`,
-            maxWidth: 720,
+            width: `${Math.min(zoom, 150)}%`,
+            maxWidth: 760,
             mx: 'auto',
             transform: `rotate(${rotation}deg)`,
             transformOrigin: 'top center',
             transition: 'transform 150ms',
-            backgroundColor: 'background.paper',
-            border: '1px solid',
-            borderColor: 'divider',
-            p: 3,
-            minHeight: 520,
           }}
         >
-          {/* A drawn facsimile of the invoice, laid out like the real page. */}
-          <Stack sx={{ gap: 2 }}>
-            <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <Stack sx={{ gap: 0.25 }}>
-                <Typography variant="body2" weight="semibold">
-                  {invoice.vendor.toUpperCase()}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {invoice.invoiceFields.find((f) => f.key === 'vendorCode')?.value}
-                </Typography>
-              </Stack>
-              <Typography variant="caption" color="text.secondary">
-                Page {page} of {pages}
-              </Typography>
-            </Stack>
-
-            <Typography variant="body2" weight="semibold" align="center">
+          {/* The page. Everything on it is positioned, so a highlight lands true. */}
+          <Box
+            sx={{
+              position: 'relative',
+              backgroundColor: 'background.paper',
+              border: '1px solid',
+              borderColor: 'divider',
+              aspectRatio: '1 / 1.35',
+              fontSize: 11,
+            }}
+            onClick={() => onSelect(null)}
+          >
+            <Typography
+              variant="caption"
+              sx={{ position: 'absolute', left: '6%', top: '19%', fontWeight: 600 }}
+            >
               INVOICE
             </Typography>
+            <Typography variant="caption" sx={{ position: 'absolute', right: '6%', top: '4%', color: 'text.secondary' }}>
+              Page {page} of {PAGES}
+            </Typography>
 
-            <Stack direction="row" sx={{ gap: 3, flexWrap: 'wrap' }}>
-              {['number', 'date', 'dueDate', 'po'].map((key) => {
-                const f = invoice.invoiceFields.find((x) => x.key === key);
-                if (!f) return null;
-                return (
-                  <Stack key={key} sx={{ gap: 0 }}>
-                    <Typography variant="caption" color="text.secondary">
-                      {f.label}
-                    </Typography>
-                    <Typography variant="caption">{f.value}</Typography>
-                  </Stack>
-                );
-              })}
-            </Stack>
-
-            <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 1.5 }}>
-              {invoice.lines.map((l) => (
-                <Stack
-                  key={l.id}
-                  direction="row"
-                  sx={{ gap: 2, justifyContent: 'space-between', py: 0.5 }}
+            {/* Field values, drawn where they live */}
+            {placed.map((f) => {
+              const isSelected = selected?.key === f.key;
+              return (
+                <Box
+                  key={f.key}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSelect(f.key);
+                  }}
+                  sx={{
+                    position: 'absolute',
+                    left: `${f.region!.x}%`,
+                    top: `${f.region!.y}%`,
+                    width: `${f.region!.w}%`,
+                    minHeight: `${f.region!.h}%`,
+                    px: 0.5,
+                    cursor: 'pointer',
+                    borderRadius: 0.5,
+                    outline: isSelected ? '2px solid' : '1px dashed transparent',
+                    outlineColor: isSelected ? 'primary.main' : undefined,
+                    backgroundColor: isSelected ? 'primary.subtle' : 'transparent',
+                    '&:hover': { backgroundColor: isSelected ? 'primary.subtle' : 'action.hover' },
+                  }}
                 >
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.2 }}>
+                    {f.label}
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: 'block', lineHeight: 1.3 }}>
+                    {f.value}
+                  </Typography>
+                </Box>
+              );
+            })}
+
+            {/* Line items */}
+            <Box sx={{ position: 'absolute', left: '6%', right: '6%', top: '46%' }}>
+              <Stack direction="row" sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 0.25 }}>
+                <Typography variant="caption" sx={{ flex: 1, fontWeight: 600 }}>
+                  Description
+                </Typography>
+                <Typography variant="caption" sx={{ width: 40, textAlign: 'right', fontWeight: 600 }}>
+                  Qty
+                </Typography>
+                <Typography variant="caption" sx={{ width: 70, textAlign: 'right', fontWeight: 600 }}>
+                  Amount
+                </Typography>
+              </Stack>
+              {invoice.lines.map((l) => (
+                <Stack key={l.id} direction="row" sx={{ py: 0.25 }}>
                   <Typography variant="caption" sx={{ flex: 1, minWidth: 0 }} noWrap>
                     {l.itemNo} · {l.description}
                   </Typography>
-                  <Typography variant="caption">{l.invoiceQty}</Typography>
-                  <Typography variant="caption" sx={{ width: 72, textAlign: 'right' }}>
+                  <Typography variant="caption" sx={{ width: 40, textAlign: 'right' }}>
+                    {l.invoiceQty}
+                  </Typography>
+                  <Typography variant="caption" sx={{ width: 70, textAlign: 'right' }}>
                     {l.invoiceLineTotal.toFixed(2)}
                   </Typography>
                 </Stack>
               ))}
             </Box>
-          </Stack>
+
+            {/* The callout: what was read, how sure, and a chance to fix it */}
+            {selected?.region && selected.region.page === page && (
+              <Box
+                onClick={(event) => event.stopPropagation()}
+                sx={{
+                  position: 'absolute',
+                  left: `${Math.min(selected.region.x, 52)}%`,
+                  top: `calc(${selected.region.y + selected.region.h}% + 6px)`,
+                  width: 260,
+                  zIndex: 2,
+                  p: 1.5,
+                  borderRadius: 1,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  backgroundColor: 'background.paper',
+                  boxShadow: 3,
+                }}
+              >
+                <Stack sx={{ gap: 1 }}>
+                  <Stack direction="row" sx={{ gap: 1, alignItems: 'center' }}>
+                    <Typography variant="caption" weight="medium" sx={{ flex: 1 }}>
+                      {selected.label}
+                    </Typography>
+                    <IconButton
+                      variant="secondary"
+                      appearance="text"
+                      size="sm"
+                      aria-label="Close"
+                      onClick={() => onSelect(null)}
+                    >
+                      <XIcon />
+                    </IconButton>
+                  </Stack>
+
+                  {selected.confidence === null ? (
+                    <Chip size="sm" variant="information" label="From Zoho · ground truth" />
+                  ) : (
+                    <Stack direction="row" sx={{ gap: 0.75, alignItems: 'center' }}>
+                      <Chip
+                        size="sm"
+                        variant={low ? (tone === 'red' ? 'error' : 'warning') : 'success'}
+                        icon={low ? <WarningIcon size={12} /> : <SealCheckIcon size={12} />}
+                        label={`${selected.confidence}% confidence`}
+                      />
+                      <Typography variant="caption" color="text.secondary">
+                        {low ? `below ${config.confidenceThreshold}%` : 'read clearly'}
+                      </Typography>
+                    </Stack>
+                  )}
+
+                  <TextField
+                    aria-label={`${selected.label} value`}
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onBlur={commit}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') commit();
+                    }}
+                    status={low ? (tone === 'red' ? 'error' : 'warning') : undefined}
+                    fullWidth
+                  />
+
+                  {selected.editedFrom !== undefined && (
+                    <Typography variant="caption" color="text.secondary">
+                      Corrected from “{selected.editedFrom}”
+                    </Typography>
+                  )}
+
+                  <Stack direction="row" sx={{ gap: 1, justifyContent: 'flex-end' }}>
+                    <Button variant="secondary" appearance="text" size="sm" onClick={() => onSelect(null)}>
+                      Close
+                    </Button>
+                    <Button size="sm" disabled={draft === selected.value} onClick={commit}>
+                      Save
+                    </Button>
+                  </Stack>
+                </Stack>
+              </Box>
+            )}
+          </Box>
         </Box>
       </Box>
 
@@ -175,15 +314,18 @@ export function DocumentPane({ invoice, pages = 6 }: { invoice: Invoice; pages?:
             <CaretLeftIcon />
           </IconButton>
           <Typography variant="body2" sx={{ fontFamily: 'mono' }}>
-            {page} <Box component="span" sx={{ color: 'text.secondary' }}>of {pages}</Box>
+            {page}{' '}
+            <Box component="span" sx={{ color: 'text.secondary' }}>
+              of {PAGES}
+            </Box>
           </Typography>
           <IconButton
             variant="secondary"
             appearance="text"
             size="sm"
             aria-label="Next page"
-            disabled={page === pages}
-            onClick={() => setPage((p) => Math.min(pages, p + 1))}
+            disabled={page === PAGES}
+            onClick={() => setPage((p) => Math.min(PAGES, p + 1))}
           >
             <CaretRightIcon />
           </IconButton>

@@ -92,6 +92,12 @@ export interface ExtractedField {
   editedFrom?: string;
   /** The purchase order's value for the same field, for the comparison view. */
   poValue?: string;
+  /**
+   * Where on the document this value was read from, as percentages of the page.
+   * Clicking the field takes the reader to it and shows the confidence there,
+   * beside the evidence, rather than on the field itself.
+   */
+  region?: { page: number; x: number; y: number; w: number; h: number };
 }
 
 /** How a line came out of matching, for the dot on its row. */
@@ -123,8 +129,17 @@ export interface ErpPayload {
   docHeader: string;
   refKey2: string;
   variance: number;
-  /** Result of the last simulate run, if one has been done. */
-  simulated: { at: string; ok: boolean; message: string } | null;
+  /**
+   * What the ERP said when the payload was dry-run. The GL account per line is
+   * derived by the ERP from the purchase order, so it comes back from here
+   * rather than being picked on the line.
+   */
+  simulated: {
+    at: string;
+    ok: boolean;
+    message: string;
+    lines: { lineId: string; description: string; gl: string; taxAmount: number }[];
+  } | null;
 }
 
 export interface MatchLine {

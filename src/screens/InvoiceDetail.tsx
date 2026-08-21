@@ -77,6 +77,7 @@ export function InvoiceDetailScreen() {
 
   const invoice = invoices.find((i) => i.id === openInvoiceId);
   const [view, setView] = React.useState<RecordView>('data');
+  const [selectedFieldKey, setSelectedFieldKey] = React.useState<string | null>(null);
   const [overrideTarget, setOverrideTarget] = React.useState<{ rule: string; label: string } | null>(null);
   const [reason, setReason] = React.useState('');
   const [rejectOpen, setRejectOpen] = React.useState(false);
@@ -105,31 +106,35 @@ export function InvoiceDetailScreen() {
   const matchClear = matchingIsClear(invoice);
   const block = invoice.matchResult?.hardBlock ?? null;
   const outstanding = outstandingFindings(invoice);
-  const missingCodes = invoice.lines.filter((l) => l.gl === '').length;
+  const missingTax = invoice.lines.filter((l) => l.vat === '' || l.wht === '').length;
 
-  /** Proceed, Validate, or Post: whatever moves this stage on. */
+  /**
+   * The stage's own action. A closed record keeps its buttons and shows them
+   * disabled: there is no separate posted screen, the same one stops accepting
+   * input.
+   */
   const primary = (() => {
-    if (readOnly) return undefined;
     if (stage === 'extraction') {
       return {
         label: 'Proceed',
-        disabled: !extractionClear,
+        disabled: readOnly || !extractionClear,
         onClick: () => advanceToMatching(invoice.id),
       };
     }
     if (stage === 'matching') {
       return {
         label: 'Validate',
-        disabled: !matchClear,
+        disabled: readOnly || !matchClear,
         onClick: () => advanceToPosting(invoice.id),
       };
     }
-    const canPost = connections.zohoBooks && !invoice.isSample && matchClear && missingCodes === 0;
+    // Posting where an ERP is connected, export where none is.
+    const posts = connections.zohoBooks && !invoice.isSample;
     return {
-      label: connections.zohoBooks && !invoice.isSample ? 'Proceed' : 'Download CSV',
-      disabled: connections.zohoBooks && !invoice.isSample ? !canPost : false,
+      label: posts ? 'Proceed' : 'Download CSV',
+      disabled: readOnly || (posts && (!matchClear || missingTax > 0)),
       onClick: () => {
-        if (connections.zohoBooks && !invoice.isSample) {
+        if (posts) {
           postInvoice(invoice.id);
         } else {
           downloadCsv(`${invoice.number}-matched-data.csv`, buildCsv([invoice], config));
@@ -140,8 +145,8 @@ export function InvoiceDetailScreen() {
   })();
 
   const secondary =
-    stage === 'posting' && !readOnly
-      ? { label: 'Simulate', onClick: () => simulatePosting(invoice.id) }
+    stage === 'posting'
+      ? { label: 'Simulate', disabled: readOnly, onClick: () => simulatePosting(invoice.id) }
       : undefined;
 
   const submitOverride = () => {
@@ -162,8 +167,9 @@ export function InvoiceDetailScreen() {
           { icon: <CurrencyDollarIcon size={14} />, label: money(invoice.amount, invoice.currency) },
         ]}
         onToggleRail={toggleAppRail}
-        onAskNeo={() => openAskNeo(invoice.id)}
-        onReject={readOnly ? undefined : () => setRejectOpen(true)}
+        onAskNeo={stage === 'posting' ? undefined : () => openAskNeo(invoice.id)}
+        onReject={() => setRejectOpen(true)}
+        rejectDisabled={readOnly}
         primary={primary}
         secondary={secondary}
       />
@@ -332,8 +338,18 @@ export function InvoiceDetailScreen() {
             <Stack direction="row" sx={{ flex: 1, minHeight: 0 }}>
               {stage === 'extraction' && (
                 <>
-                  <DocumentPane invoice={invoice} />
-                  <ExtractedData invoice={invoice} />
+                  <DocumentPane
+                    invoice={invoice}
+                    selected={
+                      invoice.invoiceFields.find((f) => f.key === selectedFieldKey) ?? null
+                    }
+                    onSelect={setSelectedFieldKey}
+                  />
+                  <ExtractedData
+                    invoice={invoice}
+                    selectedKey={selectedFieldKey}
+                    onSelect={setSelectedFieldKey}
+                  />
                 </>
               )}
               {stage === 'matching' && <MatchingViews invoice={invoice} />}

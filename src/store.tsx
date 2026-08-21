@@ -203,6 +203,24 @@ interface Store {
   removeMember: (id: string) => void;
 }
 
+/** What the chart of accounts maps a line to, by what it is. */
+function glForLine(description: string): string {
+  const d = description.toLowerCase();
+  if (/freight|delivery|shipping|ocean|fuel/.test(d)) return '7100 · Freight and delivery';
+  if (/switch|network|software|install|licence|license/.test(d)) return '6400 · IT and software';
+  if (/bolt|bearing|gasket|belting|conveyor|repair/.test(d)) return '6500 · Repairs and maintenance';
+  if (/brochure|print|label/.test(d)) return '7400 · Printing and marketing';
+  if (/paper|toner|chair|cabinet|marker|supplies/.test(d)) return '6200 · Office supplies';
+  return '5010 · Cost of goods sold';
+}
+
+/** The rate a tax code carries, for the simulated tax per line. */
+function taxRateFor(code: string): number {
+  const match = /(\d+(?:\.\d+)?)/.exec(code);
+  if (!match || /EXEMPT|NONE/i.test(code)) return 0;
+  return Number(match[1]) / 100;
+}
+
 const StoreContext = React.createContext<Store | null>(null);
 
 export function useStore(): Store {
@@ -812,16 +830,29 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const simulatePosting = React.useCallback<Store['simulatePosting']>(
     (id) => {
       patch(id, (invoice) => {
-        const missing = invoice.lines.filter((l) => l.gl === '').length;
-        const ok = missing === 0 && invoice.erp.text.trim() !== '';
+        const missingTax = invoice.lines.filter((l) => l.vat === '' || l.wht === '').length;
+        const ok = missingTax === 0 && invoice.erp.text.trim() !== '';
+
+        // The ERP derives the GL account from the purchase order, so a
+        // successful dry run is what tells you where each line will land.
+        const lines = ok
+          ? invoice.lines.map((l) => ({
+              lineId: l.id,
+              description: l.description,
+              gl: glForLine(l.description),
+              taxAmount: Number((l.invoiceLineTotal * taxRateFor(l.vat)).toFixed(2)),
+            }))
+          : [];
+
         const message = ok
-          ? `Payload accepted. ${invoice.lines.length} lines, ${invoice.erp.referenceNumber}.`
-          : missing > 0
-            ? `${missing} line${missing === 1 ? '' : 's'} have no GL account. The ERP rejected the payload.`
+          ? `Accepted. ${invoice.lines.length} lines will post against ${invoice.erp.poNumber || 'the order'}.`
+          : missingTax > 0
+            ? `${missingTax} line${missingTax === 1 ? '' : 's'} are missing a tax code. The ERP rejected the payload.`
             : 'Text is required on the document header.';
+
         return {
           ...invoice,
-          erp: { ...invoice.erp, simulated: { at: stamp(), ok, message } },
+          erp: { ...invoice.erp, simulated: { at: stamp(), ok, message, lines } },
           audit: appendAudit(invoice, ok ? 'Posting simulated' : 'Simulation failed', message),
         };
       });
@@ -1303,26 +1334,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
       case 'memory-about-to-form': {
         enterApp();
-        setUploadBatch(1);
-        setProgress((p) => ({ ...p, ingested: true, uploaded: true, reviewed: true }));
-        const uploaded = buildUpload(1);
-        // Extraction already dealt with, so the demo starts at the coding table.
-        const ready: Invoice = {
-          ...uploaded,
-          invoiceFields: uploaded.invoiceFields.map((f) => ({ ...f, acknowledged: true })),
-          poFields: uploaded.poFields.map((f) => ({ ...f, acknowledged: true })),
-          grnFields: uploaded.grnFields.map((f) => ({ ...f, acknowledged: true })),
-          stage: 'matching',
-        };
-        const list = [ready, ...INITIAL_INVOICES];
-        openFrom(
-          list.map((invoice) =>
-            invoice.id === ready.id
-              ? { ...invoice, matchResult: runMatching(invoice, DEFAULT_CONFIG, list) }
-              : invoice,
-          ),
-          ready.id,
+        setProgress((p) => ({ ...p, ingested: true, reviewed: true }));
+        // Coding is on the posting stage now, so that is where a memory forms.
+        const list = withGrnSupplied().map((invoice) =>
+          invoice.id === 'inv-44320'
+            ? {
+                ...invoice,
+                stage: 'posting' as const,
+                status: 'ERP posting' as const,
+                lines: invoice.lines.map((l) => ({ ...l, vat: 'US-EXEMPT' })),
+              }
+            : invoice,
         );
+        openFrom(list, 'inv-44320');
         break;
       }
 

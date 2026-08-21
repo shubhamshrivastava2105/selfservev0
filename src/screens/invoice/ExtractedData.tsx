@@ -1,7 +1,6 @@
 import * as React from 'react';
 import {
   Box,
-  Chip,
   Stack,
   Tab,
   Table,
@@ -11,127 +10,81 @@ import {
   TableHead,
   TableRow,
   Tabs,
-  TextField,
   Tooltip,
   Typography,
 } from '@neofloai/atoms';
-import { BrainIcon, WarningIcon } from '@neofloai/atoms/icons';
+import { WarningIcon } from '@neofloai/atoms/icons';
 import { useStore } from '../../store';
 import { confidenceTone } from '../../components/common';
 import { money, num } from '../../engine';
 import type { ExtractedField, Invoice } from '../../types';
 
-/** A field label with the asterisk the product puts on mandatory fields. */
-function FieldLabel({ field }: { field: ExtractedField }) {
-  return (
-    <Typography variant="body2">
-      {field.label}
-      {field.mandatory && (
-        <Box component="span" sx={{ color: 'error.main', ml: 0.5 }}>
-          *
-        </Box>
-      )}
-    </Typography>
-  );
-}
-
 /**
- * One value cell. Reads as plain text, as the product does, and only becomes an
- * input when the extraction scored it below the threshold and the user has to
- * deal with it.
+ * A row in the Field and Value table.
+ *
+ * The value reads as plain text. No score, no input: selecting the row takes the
+ * reader to where it was read from on the document, and the confidence and the
+ * correction both happen there, beside the evidence.
  */
-function ValueCell({
-  invoice,
+function FieldRow({
   field,
-  scope,
+  selected,
+  onSelect,
 }: {
-  invoice: Invoice;
   field: ExtractedField;
-  scope: 'invoice' | 'po' | 'grn';
+  selected: boolean;
+  onSelect: () => void;
 }) {
-  const { config, memory, editField } = useStore();
-  const [draft, setDraft] = React.useState(field.value);
-  React.useEffect(() => setDraft(field.value), [field.value]);
-
+  const { config } = useStore();
   const tone = confidenceTone(field.confidence, config.confidenceThreshold);
-  // Flagged, not blocking: a low read is editable and marked, nothing more.
-  const needsUser = tone === 'amber' || tone === 'red';
-
-  const suggestion = React.useMemo(() => {
-    if (!needsUser || !field.learnable) return null;
-    const pattern = memory.find(
-      (m) =>
-        m.streak >= config.memoryThreshold &&
-        m.fieldKey === field.key &&
-        m.patternKey.toLowerCase().includes(field.value.toLowerCase().slice(0, 12)),
-    );
-    return pattern && pattern.suggestedValue !== field.value ? pattern.suggestedValue : null;
-  }, [needsUser, field, memory, config.memoryThreshold]);
-
-  if (!needsUser) {
-    return (
-      <Stack direction="row" sx={{ gap: 1, alignItems: 'center' }}>
-        <Typography variant="body2">{field.value}</Typography>
-        {field.editedFrom !== undefined && (
-          <Tooltip title={`Corrected from "${field.editedFrom}"`}>
-            <Chip size="sm" variant="secondary" label="edited" />
-          </Tooltip>
-        )}
-      </Stack>
-    );
-  }
-
-  const commit = () => {
-    if (draft !== field.value) editField(invoice.id, scope, field.key, draft);
-  };
+  const low = tone === 'amber' || tone === 'red';
 
   return (
-    <Stack sx={{ gap: 1, py: 0.5 }}>
-      <Stack direction="row" sx={{ gap: 1, alignItems: 'flex-start' }}>
-        <TextField
-          aria-label={field.label}
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commit}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') commit();
-          }}
-          status={tone === 'red' ? 'error' : 'warning'}
-          sx={{ maxWidth: 320 }}
-          fullWidth
-        />
-        <Tooltip
-          title={`Read at ${field.confidence}% confidence, below the ${config.confidenceThreshold}% threshold. Correct it if it is wrong.`}
-        >
-          <Chip
-            size="sm"
-            variant={tone === 'red' ? 'error' : 'warning'}
-            icon={<WarningIcon size={12} />}
-            label={`${field.confidence}%`}
-          />
-        </Tooltip>
-      </Stack>
-
-      {suggestion && (
-        <Stack direction="row" sx={{ gap: 0.75, alignItems: 'center' }}>
-          <BrainIcon size={14} />
-          <Typography variant="caption" color="text.secondary">
-            Remembered:
+    <TableRow
+      hover
+      selected={selected}
+      onClick={onSelect}
+      sx={{ cursor: field.region ? 'pointer' : 'default' }}
+    >
+      <TableCell>
+        <Typography variant="body2">
+          {field.label}
+          {field.mandatory && (
+            <Box component="span" sx={{ color: 'error.main', ml: 0.5 }}>
+              *
+            </Box>
+          )}
+        </Typography>
+      </TableCell>
+      <TableCell>
+        <Stack direction="row" sx={{ gap: 1, alignItems: 'center' }}>
+          <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }}>
+            {field.value}
           </Typography>
-          <Chip
-            size="sm"
-            variant="purple"
-            label={suggestion}
-            onClick={() => editField(invoice.id, scope, field.key, suggestion)}
-          />
+          {/* A mark, not a number: the number is on the document. */}
+          {low && (
+            <Tooltip title="Read with low confidence. Click to see it on the document.">
+              <Box sx={{ display: 'flex', color: tone === 'red' ? 'error.main' : 'warning.main' }}>
+                <WarningIcon size={14} />
+              </Box>
+            </Tooltip>
+          )}
         </Stack>
-      )}
-    </Stack>
+      </TableCell>
+    </TableRow>
   );
 }
 
 /** Field and Value, as the extraction stage presents it. */
-export function ExtractedData({ invoice }: { invoice: Invoice }) {
+export function ExtractedData({
+  invoice,
+  selectedKey,
+  onSelect,
+}: {
+  invoice: Invoice;
+  selectedKey: string | null;
+  onSelect: (key: string | null) => void;
+}) {
   const [tab, setTab] = React.useState<'metadata' | 'lines'>('metadata');
   const { config } = useStore();
   const pending = invoice.invoiceFields.filter(
@@ -165,14 +118,12 @@ export function ExtractedData({ invoice }: { invoice: Invoice }) {
               </TableHead>
               <TableBody>
                 {invoice.invoiceFields.map((f) => (
-                  <TableRow key={f.key}>
-                    <TableCell>
-                      <FieldLabel field={f} />
-                    </TableCell>
-                    <TableCell>
-                      <ValueCell invoice={invoice} field={f} scope="invoice" />
-                    </TableCell>
-                  </TableRow>
+                  <FieldRow
+                    key={f.key}
+                    field={f}
+                    selected={selectedKey === f.key}
+                    onSelect={() => onSelect(selectedKey === f.key ? null : f.key)}
+                  />
                 ))}
               </TableBody>
             </Table>
