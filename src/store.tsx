@@ -45,6 +45,7 @@ import type {
   IndexedDocument,
   Invoice,
   InvoiceSource,
+  Conversation,
   Member,
   SourceId,
   WorkflowKey,
@@ -153,9 +154,18 @@ interface Store {
   workspaceVisibility: WorkspaceVisibility;
   setWorkspaceVisibility: (visibility: WorkspaceVisibility) => void;
 
+  /** The turns of the open conversation, or none if a new one is being started. */
   chat: ChatTurn[];
   pushChat: (turns: ChatTurn[]) => void;
+
+  /** Every conversation that has been had, newest first. */
+  conversations: Conversation[];
+  /** Which one is on screen. Null means a fresh one nobody has spoken in yet. */
+  activeConversationId: string | null;
+  openConversation: (id: string) => void;
+  deleteConversation: (id: string) => void;
   /** Back to the landing state, with the thread cleared. */
+  /** Put the current conversation away and start a new one. Nothing is lost. */
   clearChat: () => void;
   /** The Ask Neo panel, which opens over whatever screen you are on. */
   askNeoOpen: boolean;
@@ -271,7 +281,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [members, setMembers] = React.useState<Member[]>(MEMBERS);
   const [memory, setMemory] = React.useState<MemoryPattern[]>(MEMORY_PATTERNS);
   const [workspaceVisibility, setVisibility] = React.useState<WorkspaceVisibility>('public');
-  const [chat, setChat] = React.useState<ChatTurn[]>([]);
+  /**
+   * Conversations outlive a reload for the same reason an upload does: a person
+   * asked those questions. A scenario clears them, because a scenario is an
+   * explicit request for a clean slate before a demo.
+   */
+  const [conversations, setConversations] = React.useState<Conversation[]>(() =>
+    loadPersisted<Conversation[]>('conversations', []),
+  );
+  const [activeConversationId, setActiveConversationId] = React.useState<string | null>(null);
   const [panelChat, setPanelChat] = React.useState<ChatTurn[]>([]);
   const [askNeoOpen, setAskNeoOpen] = React.useState(false);
   const [askNeoInvoiceId, setAskNeoInvoiceId] = React.useState<string | null>(null);
@@ -316,6 +334,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => savePersisted('uploads', uploads), [uploads]);
   React.useEffect(() => savePersisted('hiddenSeeds', hiddenSeedIds), [hiddenSeedIds]);
   React.useEffect(() => savePersisted('sources', selectedSources), [selectedSources]);
+  React.useEffect(() => savePersisted('conversations', conversations), [conversations]);
+
+  /** The turns on screen: the open conversation's, or none for a fresh one. */
+  const chat = React.useMemo(
+    () => conversations.find((c) => c.id === activeConversationId)?.turns ?? [],
+    [conversations, activeConversationId],
+  );
 
   /** Uploads first, then the seeded corpus minus anything the user removed. */
   const documents = React.useMemo(
@@ -1103,11 +1128,42 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setScreen('invoice');
   }, []);
 
+  /** The first question, as the name a person will recognize it by later. */
+  const titleFrom = (turns: ChatTurn[]) => {
+    const asked = turns.find((t) => t.role === 'user')?.text.trim() ?? 'New conversation';
+    return asked.length > 64 ? `${asked.slice(0, 63).trimEnd()}…` : asked;
+  };
+
   const pushChat = React.useCallback(
-    (turns: ChatTurn[]) => setChat((previous) => [...previous, ...turns]),
-    [],
+    (turns: ChatTurn[]) => {
+      if (turns.length === 0) return;
+      const at = stamp();
+      setConversations((previous) => {
+        const active = activeConversationId
+          ? previous.find((c) => c.id === activeConversationId)
+          : undefined;
+        if (!active) {
+          // The first turn is what creates the conversation, so an empty one is
+          // never left lying in the history.
+          const created: Conversation = {
+            id: `conv-${at}`,
+            title: titleFrom(turns),
+            turns,
+            startedAt: at,
+            lastAt: at,
+          };
+          setActiveConversationId(created.id);
+          return [created, ...previous];
+        }
+        return previous.map((c) =>
+          c.id === active.id ? { ...c, turns: [...c.turns, ...turns], lastAt: at } : c,
+        );
+      });
+    },
+    [activeConversationId],
   );
-  const clearChat = React.useCallback(() => setChat([]), []);
+
+  const clearChat = React.useCallback(() => setActiveConversationId(null), []);
   const pushPanelChat = React.useCallback(
     (turns: ChatTurn[]) => setPanelChat((previous) => [...previous, ...turns]),
     [],
@@ -1165,7 +1221,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       // Uploads and source choices are the user's, so a scenario leaves them be.
       setHiddenSeedIds([]);
       setDiscoverableWorkspaces(DISCOVERABLE_WORKSPACES);
-      setChat([]);
+      setConversations([]);
+      setActiveConversationId(null);
       setPanelChat([]);
       setAskNeoOpen(false);
       setAskNeoInvoiceId(null);
@@ -1518,6 +1575,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     chat,
     pushChat,
     clearChat,
+    conversations,
+    activeConversationId,
+    openConversation: (id) => {
+      setActiveConversationId(id);
+      goTo('ask-neo');
+    },
+    deleteConversation: (id) => {
+      const gone = conversations.find((c) => c.id === id);
+      setConversations((previous) => previous.filter((c) => c.id !== id));
+      if (activeConversationId === id) setActiveConversationId(null);
+      log('Conversation deleted', gone?.title);
+    },
     askNeoOpen,
     askNeoInvoiceId,
     // A panel opened from a different record starts a fresh thread, so an answer

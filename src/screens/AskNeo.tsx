@@ -20,6 +20,7 @@ import {
   CaretDownIcon,
   CheckCircleIcon,
   CheckIcon,
+  ClockCounterClockwiseIcon,
   DatabaseIcon,
   FilePdfIcon,
   PaperPlaneRightIcon,
@@ -29,12 +30,13 @@ import {
   UploadSimpleIcon,
 } from '@neofloai/atoms/icons';
 import { useStore } from '../store';
+import { classifyFilename } from '../classify';
 import { StatusChip } from '../components/common';
 import { ShellBar } from '../components/shell';
 import { answerQuestion, availableSources, suggestedQuestions } from '../neo';
 import { money } from '../engine';
 import { formatRelative } from '../clock';
-import type { ChatTurn } from '../types';
+import type { ChatTurn, DocumentKind } from '../types';
 
 /** The column the whole conversation lives in. */
 const COLUMN = 780;
@@ -313,15 +315,66 @@ function ChatTurnView({ turn }: { turn: ChatTurn }) {
 /* ── Attachments ──────────────────────────────────────────────────────── */
 
 /**
- * The paperclip. Attaching a document is what indexing is, so the documents Neo
- * already holds live behind the same control rather than in a panel of their own.
+ * Kinds that belong to the invoice workflow rather than here. A purchase order
+ * or a receipt note is part of a match, not reading material, so attaching one
+ * to a conversation is almost always the wrong door.
+ */
+const BELONGS_IN_WORKFLOW = new Set<DocumentKind>(['invoice', 'po', 'grn']);
+
+/**
+ * What to do about a file attached at the wrong door.
+ *
+ * It is still indexed — throwing away what someone just picked is worse than a
+ * misplaced file — so this offers the other route rather than blocking. Taking
+ * it moves the file: it becomes an invoice record and stops being reading
+ * material, because being both is the confusion this exists to remove.
+ */
+function MisfiledNotice({ names, onDismiss }: { names: string[]; onDismiss: () => void }) {
+  const { documents, ingestUpload, removeDocument, goTo } = useStore();
+  if (names.length === 0) return null;
+
+  const one = names.length === 1;
+  const send = () => {
+    ingestUpload(names.map((name) => ({ name, kind: classifyFilename(name) })));
+    for (const name of names) {
+      const doc = documents.find((d) => d.name === name);
+      if (doc) removeDocument(doc.id);
+    }
+    onDismiss();
+    goTo('queue');
+  };
+
+  return (
+    <Alert
+      severity="info"
+      title={`${one ? 'That looks like' : 'Those look like'} work for Invoice Processing`}
+      onClose={onDismiss}
+      action={
+        <Button variant="secondary" appearance="outline" size="sm" onClick={send}>
+          {one ? 'Send it there' : 'Send them there'}
+        </Button>
+      }
+    >
+      {names.join(', ')} {one ? 'is' : 'are'} indexed here, so you can ask about{' '}
+      {one ? 'it' : 'them'}. Extracting, matching and posting happens in Invoice Processing.
+    </Alert>
+  );
+}
+
+/**
+ * The paperclip: reference material to ask questions about.
+ *
+ * This is not the invoice inbox, and the difference is easy to miss — both take
+ * a PDF. So the control says what it is for, and a file that looks like an
+ * invoice is caught on the way in and offered the other route rather than
+ * quietly becoming something you can only ask about.
  *
  * The picker is the real one: files come off disk, keep their names and sizes,
  * and survive a reload. Where the browser can read a file's text it is chunked
  * into pages and genuinely retrieved against; where it cannot, the document says
  * so instead of offering quotes it does not have.
  */
-function AttachmentMenu() {
+function AttachmentMenu({ onAttached }: { onAttached: (names: string[]) => void }) {
   const store = useStore();
   const { documents, addDocuments, addSampleDocument, removeDocument } = store;
   const [anchor, setAnchor] = React.useState<HTMLElement | null>(null);
@@ -334,9 +387,14 @@ function AttachmentMenu() {
   const take = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setBusy(true);
-    const result = await addDocuments(Array.from(files));
+    const picked = Array.from(files);
+    const result = await addDocuments(picked);
     setUnread(result.unread);
     setBusy(false);
+    // Anything that belongs in the invoice workflow, for the screen to offer.
+    onAttached(
+      picked.map((f) => f.name).filter((name) => BELONGS_IN_WORKFLOW.has(classifyFilename(name))),
+    );
   };
 
   return (
@@ -356,12 +414,12 @@ function AttachmentMenu() {
         sx={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
       />
 
-      <Tooltip title="Attach a document">
+      <Tooltip title="Attach something to ask about">
         <IconButton
           variant="secondary"
           appearance="text"
           size="md"
-          aria-label="Attach a document"
+          aria-label="Attach something to ask about"
           onClick={(event) => setAnchor(event.currentTarget)}
         >
           <PaperclipIcon />
@@ -376,6 +434,19 @@ function AttachmentMenu() {
         transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
         sx={{ '& .MuiMenu-paper': { minWidth: 380, maxWidth: 460 } }}
       >
+        {/* Says what this is for, next to the thing it is not for. */}
+        <MenuItem variant="secondary" disabled sx={{ whiteSpace: 'normal' }}>
+          <Stack sx={{ gap: 0.25 }}>
+            <Typography variant="caption" weight="medium">
+              Reading material
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Contracts, policies, reports — anything you want to ask questions about. Invoices to
+              extract and post go to the Invoices dashboard instead.
+            </Typography>
+          </Stack>
+        </MenuItem>
+        <Divider />
         <MenuItem
           variant="action"
           disabled={busy}
@@ -386,7 +457,7 @@ function AttachmentMenu() {
           }}
         >
           <UploadSimpleIcon size={16} />
-          {busy ? 'Indexing…' : 'Attach a document'}
+          {busy ? 'Indexing…' : 'Attach a document to ask about'}
         </MenuItem>
         <MenuItem
           onClick={() => {
@@ -402,7 +473,7 @@ function AttachmentMenu() {
 
         {documents.length === 0 ? (
           <MenuItem variant="secondary" disabled>
-            Nothing attached yet. Long documents go in whole.
+            Nothing attached yet. However long it is, it goes in whole.
           </MenuItem>
         ) : (
           <>
@@ -418,7 +489,8 @@ function AttachmentMenu() {
                     {doc.name}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {doc.pages} pages · {formatRelative(doc.indexedAt)}
+                    {doc.pages} page{doc.pages === 1 ? '' : 's'} ·{' '}
+                    {formatRelative(doc.indexedAt)}
                     {doc.isSample && ' · sample'}
                     {doc.contentRead === false && ' · held, contents not read'}
                   </Typography>
@@ -550,6 +622,89 @@ function SourcePicker() {
   );
 }
 
+/* ── History ──────────────────────────────────────────────────────────── */
+
+/**
+ * Conversations already had.
+ *
+ * "New question" used to throw the thread away, which made asking a follow-up
+ * tomorrow mean retyping today. Now it puts it away instead, and this is where
+ * it went. Reopening one shows the answers as they were given rather than
+ * re-running them, so a conversation is a record and not a live query.
+ */
+function HistoryMenu() {
+  const { conversations, activeConversationId, openConversation, deleteConversation } = useStore();
+  const [anchor, setAnchor] = React.useState<HTMLElement | null>(null);
+  if (conversations.length === 0) return null;
+
+  return (
+    <>
+      <Button
+        variant="secondary"
+        appearance="outline"
+        size="sm"
+        startIcon={<ClockCounterClockwiseIcon size={16} />}
+        endIcon={<CaretDownIcon size={14} />}
+        onClick={(event) => setAnchor(event.currentTarget)}
+        sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
+      >
+        History
+      </Button>
+
+      <Menu
+        anchorEl={anchor}
+        open={Boolean(anchor)}
+        onClose={() => setAnchor(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        sx={{ '& .MuiMenu-paper': { minWidth: 340, maxWidth: 440 } }}
+      >
+        <MenuItem variant="secondary" disabled>
+          {conversations.length} conversation{conversations.length === 1 ? '' : 's'}
+        </MenuItem>
+        {conversations.map((conversation) => {
+          const questions = conversation.turns.filter((t) => t.role === 'user').length;
+          return (
+            <MenuItem
+              key={conversation.id}
+              selected={conversation.id === activeConversationId}
+              onClick={() => {
+                openConversation(conversation.id);
+                setAnchor(null);
+              }}
+              sx={{ alignItems: 'flex-start' }}
+            >
+              <Stack sx={{ flex: 1, minWidth: 0, gap: 0 }}>
+                <Typography variant="body2" noWrap>
+                  {conversation.title}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {questions} question{questions === 1 ? '' : 's'} ·{' '}
+                  {formatRelative(conversation.lastAt)}
+                </Typography>
+              </Stack>
+              <Tooltip title="Delete">
+                <IconButton
+                  variant="secondary"
+                  appearance="text"
+                  size="sm"
+                  aria-label={`Delete ${conversation.title}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    deleteConversation(conversation.id);
+                  }}
+                >
+                  <TrashIcon />
+                </IconButton>
+              </Tooltip>
+            </MenuItem>
+          );
+        })}
+      </Menu>
+    </>
+  );
+}
+
 /* ── The screen ───────────────────────────────────────────────────────── */
 
 export function AskNeoScreen() {
@@ -566,6 +721,10 @@ export function AskNeoScreen() {
   } = store;
 
   const [draft, setDraft] = React.useState('');
+  /** Files just attached that belong in the invoice workflow, not here. */
+  const [misfiled, setMisfiled] = React.useState<string[]>([]);
+  /** The conversation on screen, if one has been spoken in. */
+  const open = store.conversations.find((c) => c.id === store.activeConversationId) ?? null;
   const endRef = React.useRef<HTMLDivElement | null>(null);
   const firstVisit = landingMode === 'first';
   const name = profile.firstName || 'there';
@@ -643,30 +802,48 @@ export function AskNeoScreen() {
             New question
           </Button>
         )}
+        <HistoryMenu />
       </ShellBar>
 
       {/* The thread. Everything Neo has to say, oldest first. */}
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         <Box sx={{ maxWidth: COLUMN, mx: 'auto', px: 3, pt: 4, pb: 3 }}>
           <Stack sx={{ gap: 3 }}>
-            <Stack sx={{ gap: 0.5 }}>
-              <Typography variant="h3" component="h1">
-                {firstVisit ? `Welcome to Neoflo, ${name}` : `${timeOfDay()}, ${name}`}
-              </Typography>
-              <Typography variant="body1" color="text.secondary">
-                {firstVisit
-                  ? 'I read your invoices, check them against your purchase orders and receipts, and bring you only what needs a person.'
-                  : 'Ask me anything about your invoices, vendors or documents.'}
-              </Typography>
-            </Stack>
-
-            {firstVisit ? (
-              <ChecklistMessage />
+            {/* A conversation is headed by what it was about. The greeting and
+                the briefing belong to an empty page: once you are reading a
+                thread, "here is what changed while you were away" is noise, and
+                above a thread from last week it is wrong. */}
+            {open ? (
+              <Stack sx={{ gap: 0.5 }}>
+                <Typography variant="h4" component="h1">
+                  {open.title}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Asked {formatRelative(open.startedAt)}
+                </Typography>
+              </Stack>
             ) : (
               <>
-                <BriefingMessage />
-                <ResumeMessage />
-                <ChecklistMessage />
+                <Stack sx={{ gap: 0.5 }}>
+                  <Typography variant="h3" component="h1">
+                    {firstVisit ? `Welcome to Neoflo, ${name}` : `${timeOfDay()}, ${name}`}
+                  </Typography>
+                  <Typography variant="body1" color="text.secondary">
+                    {firstVisit
+                      ? 'I read your invoices, check them against your purchase orders and receipts, and bring you only what needs a person.'
+                      : 'Ask me anything about your invoices, vendors or documents.'}
+                  </Typography>
+                </Stack>
+
+                {firstVisit ? (
+                  <ChecklistMessage />
+                ) : (
+                  <>
+                    <BriefingMessage />
+                    <ResumeMessage />
+                    <ChecklistMessage />
+                  </>
+                )}
               </>
             )}
 
@@ -682,6 +859,8 @@ export function AskNeoScreen() {
       <Box sx={{ flexShrink: 0, borderTop: '1px solid', borderColor: 'divider' }}>
         <Box sx={{ maxWidth: COLUMN, mx: 'auto', px: 3, pt: 2, pb: 2 }}>
           <Stack sx={{ gap: 1.5 }}>
+            <MisfiledNotice names={misfiled} onDismiss={() => setMisfiled([])} />
+
             {chat.length === 0 && (
               <Stack direction="row" sx={{ gap: 0.75, flexWrap: 'wrap' }}>
                 {suggestedQuestions()
@@ -700,7 +879,7 @@ export function AskNeoScreen() {
             )}
 
             <Stack direction="row" sx={{ gap: 1, alignItems: 'flex-end' }}>
-              <AttachmentMenu />
+              <AttachmentMenu onAttached={setMisfiled} />
               <SourcePicker />
               <TextField
                 aria-label="Ask Neo a question"

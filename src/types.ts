@@ -404,6 +404,21 @@ export interface Citation {
   detail: string;
 }
 
+/**
+ * One conversation with Neo, kept after it ends.
+ *
+ * The title is the question that started it, which is what a person recognizes
+ * a conversation by. Turns are stored whole so reopening one shows the answers
+ * as they were given, rather than re-asking and getting today's data.
+ */
+export interface Conversation {
+  id: string;
+  title: string;
+  turns: ChatTurn[];
+  startedAt: string;
+  lastAt: string;
+}
+
 export interface ChatTurn {
   id: string;
   role: 'user' | 'neo';
