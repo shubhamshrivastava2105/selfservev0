@@ -33,6 +33,7 @@ import type {
   ChatTurn,
   Connections,
   DiscoverableWorkspace,
+  ErpPayload,
   DocumentKind,
   DomainVerdict,
   IndexedDocument,
@@ -168,6 +169,10 @@ interface Store {
   setPoNumber: (id: string, poNumber: string) => void;
   attachReference: (id: string, which: 'po' | 'grn') => void;
   setLineCode: (id: string, lineId: string, field: 'vat' | 'wht' | 'gl', value: string) => void;
+  /** Edit a field on the ERP payload. */
+  setErpField: (id: string, key: keyof ErpPayload, value: string) => void;
+  /** Dry-run the posting against the ERP without writing anything. */
+  simulatePosting: (id: string) => void;
   goBackToExtraction: (id: string) => void;
 
   /* Ingestion */
@@ -736,6 +741,38 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setProgress((p) => ({ ...p, reviewed: true }));
     },
     [patch, config.memoryThreshold, actor, log],
+  );
+
+  const setErpField = React.useCallback<Store['setErpField']>(
+    (id, key, value) => {
+      patch(id, (invoice) => ({ ...invoice, erp: { ...invoice.erp, [key]: value } }));
+    },
+    [patch],
+  );
+
+  /**
+   * A dry run: the ERP validates the payload and reports back without writing.
+   * It fails where a mandatory code is still missing, which is the case worth
+   * catching before a real post.
+   */
+  const simulatePosting = React.useCallback<Store['simulatePosting']>(
+    (id) => {
+      patch(id, (invoice) => {
+        const missing = invoice.lines.filter((l) => l.gl === '').length;
+        const ok = missing === 0 && invoice.erp.text.trim() !== '';
+        const message = ok
+          ? `Payload accepted. ${invoice.lines.length} lines, ${invoice.erp.referenceNumber}.`
+          : missing > 0
+            ? `${missing} line${missing === 1 ? '' : 's'} have no GL account. The ERP rejected the payload.`
+            : 'Text is required on the document header.';
+        return {
+          ...invoice,
+          erp: { ...invoice.erp, simulated: { at: stamp(), ok, message } },
+          audit: appendAudit(invoice, ok ? 'Posting simulated' : 'Simulation failed', message),
+        };
+      });
+    },
+    [patch, actor],
   );
 
   /* ── Ingestion ──────────────────────────────────────────────────────── */
@@ -1338,6 +1375,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setPoNumber,
     attachReference,
     setLineCode,
+    setErpField,
+    simulatePosting,
     goBackToExtraction,
     runSamples,
     uploadInvoice,

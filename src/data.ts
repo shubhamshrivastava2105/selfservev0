@@ -11,6 +11,8 @@ import type {
   Connections,
   RefSource,
   DomainVerdict,
+  ErpPayload,
+  GrnLine,
   IndexedDocument,
   DiscoverableWorkspace,
   ExtractedField,
@@ -305,12 +307,18 @@ function field(
   return { key, label, value, confidence, acknowledged: false, mandatory, learnable };
 }
 
-/** The standard invoice set (Workflow PRD §5). `conf` overrides per field. */
+/**
+ * The invoice field set, in the order and wording the product shows it, with the
+ * purchase order's value alongside for the matching comparison.
+ */
 function invoiceFields(
   values: {
     number: string;
     date: string;
+    dueDate?: string;
     vendor: string;
+    vendorCode?: string;
+    vendorTaxId?: string;
     po: string | null;
     currency: string;
     subtotal: string;
@@ -322,21 +330,30 @@ function invoiceFields(
   },
   conf: Record<string, number> = {},
   base = 97,
+  /** Fields where the PO disagrees. Anything absent matches the invoice. */
+  poOverrides: Record<string, string> = {},
 ): ExtractedField[] {
   const c = (k: string) => conf[k] ?? base;
-  return [
-    field('number', 'Invoice number', values.number, c('number')),
-    field('date', 'Invoice date', values.date, c('date')),
-    field('vendor', 'Vendor name', values.vendor, c('vendor'), true, true),
-    field('po', 'PO number', values.po ?? '—', c('po')),
-    field('currency', 'Currency', values.currency, c('currency')),
-    field('subtotal', 'Subtotal', values.subtotal, c('subtotal')),
-    field('tax', 'Tax', values.tax, c('tax')),
-    field('total', 'Total', values.total, c('total')),
-    field('taxCode', 'Tax code', values.taxCode ?? 'US-EXEMPT', c('taxCode'), false, true),
-    field('terms', 'Payment terms', values.terms ?? 'Net 30', c('terms'), false, true),
-    field('remitTo', 'Remit-to address', values.remitTo ?? '—', c('remitTo'), false, false),
+  const rows: [string, string, string, boolean, boolean][] = [
+    // key, label, value, mandatory, learnable
+    ['po', 'Purchase Order Number', values.po ?? '—', false, false],
+    ['number', 'Invoice Number', values.number, true, false],
+    ['date', 'Invoice Date', values.date, true, false],
+    ['dueDate', 'Due Date', values.dueDate ?? values.date, false, false],
+    ['vendor', 'Vendor Name', values.vendor, true, true],
+    ['vendorCode', 'Vendor Code', values.vendorCode ?? '—', true, true],
+    ['vendorTaxId', 'Vendor Tax ID', values.vendorTaxId ?? values.vendorCode ?? '—', true, false],
+    ['terms', 'Payment Terms', values.terms ?? 'Net 30', false, true],
+    ['currency', 'Currency', values.currency, true, false],
+    ['total', 'Total Amount', values.total, true, false],
+    ['tax', 'Tax Amount', values.tax, false, false],
+    ['subtotal', 'Amount before tax', values.subtotal, false, false],
+    ['taxCode', 'Tax code', values.taxCode ?? 'US-EXEMPT', false, true],
   ];
+  return rows.map(([key, label, value, mandatory, learnable]) => ({
+    ...field(key, label, value, c(key), mandatory, learnable),
+    poValue: poOverrides[key] ?? value,
+  }));
 }
 
 /** A PO read from a document carries confidence; one from Zoho does not. */
@@ -380,19 +397,80 @@ function line(
   poUnitPrice?: number,
 ): MatchLine {
   const poUnit = poUnitPrice ?? unitPrice;
+  const invoiceLineTotal = Number((invoiceQty * unitPrice).toFixed(2));
+  const poLineTotal = Number((poQty * poUnit).toFixed(2));
   return {
     id,
+    itemNo: `ILI-${id.replace(/\D/g, '').padStart(4, '0')}`,
     description,
     invoiceQty,
     poQty,
     grnQty,
     invoiceUnitPrice: unitPrice,
     poUnitPrice: poUnit,
-    invoiceLineTotal: Number((invoiceQty * unitPrice).toFixed(2)),
-    poLineTotal: Number((poQty * poUnit).toFixed(2)),
+    invoiceLineTotal,
+    poLineTotal,
     vat,
     wht,
     gl,
+    // The dot on the row: exact, inside tolerance, or out.
+    state:
+      invoiceQty === poQty && invoiceLineTotal === poLineTotal
+        ? 'matched'
+        : Math.abs(invoiceLineTotal - poLineTotal) <= 10
+          ? 'warning'
+          : 'failed',
+  };
+}
+
+/**
+ * The GRN side of the comparison, built from the lines that were received. The
+ * product shows receipts as their own rows carrying a PO and GRN number, so a
+ * line received against two POs appears twice.
+ */
+function grnLinesFor(lines: MatchLine[], poNumber: string | null): GrnLine[] {
+  return lines
+    .filter((l) => l.grnQty !== null)
+    .map((l) => ({
+      id: `grn-${l.id}`,
+      poNo: poNumber ?? '—',
+      grnNo: l.itemNo,
+      description: l.description,
+      qty: l.grnQty as number,
+      unitPrice: l.poUnitPrice,
+      lineTotal: Number(((l.grnQty as number) * l.poUnitPrice).toFixed(2)),
+      matchedTo: l.id,
+    }));
+}
+
+/** The payload the posting stage writes, derived from what was matched. */
+function erpFor(
+  invoice: { poNumber: string | null; amount: number; number: string; lines: MatchLine[] },
+): ErpPayload {
+  const beforeVat = invoice.lines.reduce((sum, l) => sum + l.invoiceLineTotal, 0);
+  const poTotal = invoice.lines.reduce((sum, l) => sum + l.poLineTotal, 0);
+  return {
+    poNumber: invoice.poNumber ?? '',
+    amountBeforeVat: Number(beforeVat.toFixed(2)),
+    totalAfterVat: invoice.amount,
+    referenceNumber: `NL${invoice.number.replace(/\D/g, '').padStart(9, '0')}`,
+    text: invoice.number,
+    refKeyHead1: '',
+    refKeyHead2: '',
+    assignment: '',
+    docHeader: '',
+    refKey2: '',
+    variance: Number((invoice.amount - poTotal).toFixed(2)),
+    simulated: null,
+  };
+}
+
+/** Fills in the views the product shows but the seed literals do not spell out. */
+function withDerived(invoice: Omit<Invoice, 'grnLines' | 'erp'>): Invoice {
+  return {
+    ...invoice,
+    grnLines: grnLinesFor(invoice.lines, invoice.poNumber),
+    erp: erpFor(invoice),
   };
 }
 
@@ -441,7 +519,7 @@ export const SOURCES: InvoiceSource[] = [
  * The three pre-computed samples (§12) are NOT here — they arrive when you
  * click "Run a sample" on the queue, which is the route the PRD describes.
  */
-export const INITIAL_INVOICES: Invoice[] = [
+const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
   /* Low-confidence extraction. A poor scan, still usable. */
   {
     id: 'inv-77120',
@@ -463,6 +541,8 @@ export const INITIAL_INVOICES: Invoice[] = [
         number: 'INV-77120',
         date: formatDate(at(1)),
         vendor: 'Sierra Netwoks',
+        vendorCode: '760114882 (SN-4471)',
+        vendorTaxId: '760114882 (SN-4471)',
         po: 'PO-US-77004',
         currency: 'USD',
         subtotal: '3,940.24',
@@ -889,6 +969,9 @@ export const INITIAL_INVOICES: Invoice[] = [
   },
 ];
 
+/** The queue this workspace opens with. */
+export const INITIAL_INVOICES: Invoice[] = SEED_INVOICES.map(withDerived);
+
 /* ── The pre-computed sample set (Workflow PRD §12) ───────────────────── */
 
 /**
@@ -912,7 +995,7 @@ export function buildSamples(batch: number): Invoice[] {
     line('l3', 'Task chair — mesh back', 8, 8, 8, 500.0, '6200 · Office supplies'),
   ];
 
-  const clean: Invoice = {
+  const clean: Omit<Invoice, 'grnLines' | 'erp'> = {
     id: `sample-clean${suffix}`,
     number: `INV-2026-4417${suffix}`,
     vendor: 'Redwood Office Supply',
@@ -967,7 +1050,7 @@ export function buildSamples(batch: number): Invoice[] {
     terminalAt: null,
   };
 
-  const variance: Invoice = {
+  const variance: Omit<Invoice, 'grnLines' | 'erp'> = {
     id: `sample-variance${suffix}`,
     number: `INV-2026-4418${suffix}`,
     vendor: 'Cascade Industrial Parts',
@@ -1030,7 +1113,7 @@ export function buildSamples(batch: number): Invoice[] {
 
   /* Same number, vendor and legal entity as the clean one — so the duplicate
      check finds it against the sample that arrived a moment earlier. */
-  const duplicate: Invoice = {
+  const duplicate: Omit<Invoice, 'grnLines' | 'erp'> = {
     ...clean,
     id: `sample-duplicate${suffix}`,
     invoiceDate: at(5),
@@ -1054,7 +1137,7 @@ export function buildSamples(batch: number): Invoice[] {
     lines: cleanLines.map((l) => ({ ...l })),
   };
 
-  return [clean, variance, duplicate];
+  return [clean, variance, duplicate].map(withDerived);
 }
 
 /**
@@ -1099,7 +1182,7 @@ export function buildFromUpload(input: {
       : 'none';
   const grnQuantity = grnSource === 'none' ? null : quantity;
 
-  return {
+  return withDerived({
     id: `inv-upload-${input.sourceId}-${input.index}`,
     number,
     vendor: 'Redwood Office Supply',
@@ -1119,6 +1202,8 @@ export function buildFromUpload(input: {
         number,
         date: formatDate(at(0)),
         vendor: 'REDWOOD OFFICE SUPPLY CO',
+        vendorCode: '299017764 (ROS-1180)',
+        vendorTaxId: '299017764 (ROS-1180)',
         po: poNumber,
         currency: 'USD',
         subtotal: total.toFixed(2),
@@ -1168,14 +1253,14 @@ export function buildFromUpload(input: {
     ingestedAt: stampedAt,
     firstSurfacedAt: stampedAt,
     terminalAt: null,
-  };
+  });
 }
 
 /** An uploaded invoice, for the queue's Upload action. */
 export function buildUpload(batch: number): Invoice {
   const stampedAt = at(0, NOW_HOUR, NOW_MINUTE);
   const n = 91000 + batch;
-  return {
+  return withDerived({
     id: `inv-upload-${n}`,
     number: `INV-${n}`,
     vendor: 'Redwood Office Supply',
@@ -1195,6 +1280,8 @@ export function buildUpload(batch: number): Invoice {
         number: `INV-${n}`,
         date: formatDate(at(0)),
         vendor: 'REDWOOD OFFICE SUPPLY CO',
+        vendorCode: '299017764 (ROS-1180)',
+        vendorTaxId: '299017764 (ROS-1180)',
         po: 'PO-US-91004',
         currency: 'USD',
         subtotal: '4,265.00',
@@ -1231,7 +1318,7 @@ export function buildUpload(batch: number): Invoice {
     ingestedAt: stampedAt,
     firstSurfacedAt: stampedAt,
     terminalAt: null,
-  };
+  });
 }
 
 

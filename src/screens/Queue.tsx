@@ -6,6 +6,7 @@ import {
   Chip,
   DataGrid,
   Divider,
+  IconButton,
   Menu,
   MenuItem,
   Stack,
@@ -17,11 +18,13 @@ import {
   countActiveFilters,
 } from '@neofloai/atoms';
 import {
+  ArrowSquareOutIcon,
   DownloadSimpleIcon,
   EnvelopeSimpleIcon,
   FadersHorizontalIcon,
   FilesIcon,
   MagnifyingGlassIcon,
+  PaperclipIcon,
   SparkleIcon,
   UploadSimpleIcon,
   WarningIcon,
@@ -29,11 +32,11 @@ import {
 import type { FilterGroup, FilterValue } from '@neofloai/atoms';
 import { Filter } from '@neofloai/atoms';
 import { useStore } from '../store';
-import { EmptyState, SourceChip, StatusChip } from '../components/common';
+import { EmptyState, StatusChip } from '../components/common';
 import { ShellBar } from '../components/shell';
 import { UploadDialog } from '../components/UploadDialog';
 import { buildCsv, downloadCsv, money, unacknowledgedFields } from '../engine';
-import { ageInDays, formatDate } from '../clock';
+import { formatDate, formatTime } from '../clock';
 import type { Invoice, InvoiceStatus } from '../types';
 
 const CLOSED_STATUSES: InvoiceStatus[] = ['Posted', 'Exported', 'Rejected'];
@@ -141,62 +144,67 @@ export function QueueScreen() {
     });
   }, [invoices, search, selection, tab]);
 
+  /** The dashboard's columns, as the product lays them out. */
   const columns = React.useMemo(
     () => [
       {
-        field: 'number',
-        headerName: 'Invoice',
-        width: 165,
+        field: 'sourceId',
+        headerName: 'Source ID/ Time',
+        width: 190,
+        renderCell: ({ row }: { row: Invoice }) => (
+          <Stack direction="row" sx={{ gap: 1, alignItems: 'flex-start', minWidth: 0 }}>
+            <Box sx={{ display: 'flex', color: 'text.secondary', mt: 0.25 }}>
+              {row.source === 'Mailbox' ? (
+                <EnvelopeSimpleIcon size={14} />
+              ) : row.source === 'Sample' ? (
+                <SparkleIcon size={14} />
+              ) : (
+                <UploadSimpleIcon size={14} />
+              )}
+            </Box>
+            <Stack sx={{ gap: 0, minWidth: 0 }}>
+              <Typography variant="body2" sx={{ fontFamily: 'mono' }} color="primary.main" noWrap>
+                #{row.number.replace(/\D/g, '').slice(-4)}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'mono' }} noWrap>
+                {formatDate(row.ingestedAt)} | {formatTime(row.ingestedAt)}
+              </Typography>
+            </Stack>
+          </Stack>
+        ),
+      },
+      {
+        field: 'vendor',
+        headerName: 'Vendor / Invoice#',
+        flex: 1,
+        minWidth: 190,
         renderCell: ({ row }: { row: Invoice }) => (
           <Stack sx={{ gap: 0, minWidth: 0 }}>
             <Typography variant="body2" weight="medium" noWrap>
-              {row.number}
+              {row.vendor}
             </Typography>
             <Typography variant="caption" color="text.secondary" noWrap>
-              {formatDate(row.invoiceDate)} · {ageInDays(row.ingestedAt)}d old
+              {row.number}
             </Typography>
           </Stack>
         ),
       },
-      { field: 'vendor', headerName: 'Vendor', flex: 1, minWidth: 150 },
-      {
-        field: 'amount',
-        headerName: 'Amount',
-        type: 'number' as const,
-        width: 120,
-        renderCell: ({ row }: { row: Invoice }) => (
-          <Typography variant="body2">{money(row.amount, row.currency)}</Typography>
-        ),
-      },
-      {
-        field: 'poNumber',
-        headerName: 'PO',
-        width: 130,
-        renderCell: ({ row }: { row: Invoice }) =>
-          row.poNumber ? (
-            <Typography variant="body2" noWrap>
-              {row.poNumber}
-            </Typography>
-          ) : (
-            <Chip size="sm" variant="error" label="None" />
-          ),
-      },
       {
         field: 'status',
         headerName: 'Status',
-        width: 190,
+        width: 160,
         renderCell: ({ row }: { row: Invoice }) => {
           const pending = unacknowledgedFields(row, config.confidenceThreshold).length;
           return (
             <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>
               <StatusChip status={row.status} />
               {pending > 0 && (
-                <Tooltip title={`${pending} field${pending === 1 ? '' : 's'} below the ${config.confidenceThreshold}% threshold`}>
+                <Tooltip title={`${pending} fields below the ${config.confidenceThreshold}% threshold`}>
                   <Chip size="sm" variant="warning" icon={<WarningIcon size={12} />} label={pending} />
                 </Tooltip>
               )}
               {row.stpPosted && (
-                <Tooltip title="Posted by straight-through processing. Never surfaced to anyone.">
+                <Tooltip title="Posted by straight-through processing">
                   <Box sx={{ display: 'flex', color: 'text.secondary' }}>
                     <SparkleIcon size={14} />
                   </Box>
@@ -207,47 +215,70 @@ export function QueueScreen() {
         },
       },
       {
-        field: 'source',
-        headerName: 'Source',
-        width: 110,
-        renderCell: ({ row }: { row: Invoice }) => <SourceChip kind={row.source} />,
-      },
-      {
-        field: 'matchType',
-        headerName: 'Match',
-        width: 80,
+        field: 'attachment',
+        headerName: 'Invoice attachment',
+        width: 210,
         sortable: false,
         renderCell: ({ row }: { row: Invoice }) => (
-          <Typography variant="body2" color="text.secondary">
-            {row.matchResult?.matchTypeUsed ?? config.matchType}
+          <Stack direction="row" sx={{ gap: 0.75, alignItems: 'center', minWidth: 0 }}>
+            <Box sx={{ display: 'flex', color: 'text.secondary' }}>
+              <PaperclipIcon size={14} />
+            </Box>
+            <Typography variant="body2" color="text.secondary" noWrap>
+              {row.vendor.split(' ')[0]}_{row.number}.pdf
+            </Typography>
+          </Stack>
+        ),
+      },
+      {
+        field: 'amount',
+        headerName: 'Amount',
+        type: 'number' as const,
+        width: 130,
+        renderCell: ({ row }: { row: Invoice }) => (
+          <Typography variant="body2" sx={{ fontFamily: 'mono' }}>
+            {money(row.amount, row.currency)}
           </Typography>
         ),
       },
       {
-        field: 'open',
-        headerName: '',
-        width: 88,
+        field: 'action',
+        headerName: 'Action',
+        width: 130,
         sortable: false,
-        align: 'right' as const,
-        renderCell: ({ row }: { row: Invoice }) => (
-          <Button
-            variant="secondary"
-            appearance="outline"
-            size="sm"
-            onClick={() => openInvoice(row.id)}
-          >
-            Open
-          </Button>
-        ),
+        renderCell: ({ row }: { row: Invoice }) => {
+          const closed = CLOSED_STATUSES.includes(row.status);
+          return (
+            <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>
+              <Button
+                variant={closed ? 'secondary' : 'primary'}
+                appearance="outline"
+                size="sm"
+                onClick={() => openInvoice(row.id)}
+              >
+                {closed ? 'View' : 'Review'}
+              </Button>
+              <Tooltip title="Open the source">
+                <IconButton
+                  variant="secondary"
+                  appearance="text"
+                  size="sm"
+                  aria-label={`Open the source of ${row.number}`}
+                >
+                  <ArrowSquareOutIcon />
+                </IconButton>
+              </Tooltip>
+            </Stack>
+          );
+        },
       },
     ],
-    [config.matchType, config.confidenceThreshold, openInvoice],
+    [config.confidenceThreshold, openInvoice],
   );
 
   /**
    * A bundle that arrived with no invoice among it is the one thing an invoice
    * row cannot lead you to, so it is surfaced here and only when it exists.
-   * Everything else about a source belongs on the invoice that came from it.
    */
   const heldDocuments = React.useMemo(
     () => sources.flatMap((source) => source.heldDocuments),
@@ -282,7 +313,7 @@ export function QueueScreen() {
           startIcon={<UploadSimpleIcon size={16} />}
           onClick={(event) => setAddAnchor(event.currentTarget)}
         >
-          Add invoices
+          Upload Invoice
         </Button>
       </ShellBar>
 
@@ -291,7 +322,7 @@ export function QueueScreen() {
           <Stack direction="row" sx={{ gap: 2, alignItems: 'flex-end', flexWrap: 'wrap' }}>
             <Stack sx={{ flex: 1, gap: 0.25, minWidth: 240 }}>
               <Typography variant="h3" component="h1">
-                Invoices
+                Invoice Dashboard
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 {needsMe > 0

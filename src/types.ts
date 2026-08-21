@@ -90,6 +90,41 @@ export interface ExtractedField {
   learnable: boolean;
   /** Set when the user edits the value, so the audit trail can say so. */
   editedFrom?: string;
+  /** The purchase order's value for the same field, for the comparison view. */
+  poValue?: string;
+}
+
+/** How a line came out of matching, for the dot on its row. */
+export type LineMatchState = 'matched' | 'warning' | 'failed' | 'unchecked';
+
+/** A line on the GRN side of the comparison. */
+export interface GrnLine {
+  id: string;
+  poNo: string;
+  grnNo: string;
+  description: string;
+  qty: number;
+  unitPrice: number;
+  lineTotal: number;
+  /** Which invoice line it was matched to, if any. */
+  matchedTo: string | null;
+}
+
+/** The payload written to the ERP, as the posting screen shows it. */
+export interface ErpPayload {
+  poNumber: string;
+  amountBeforeVat: number;
+  totalAfterVat: number;
+  referenceNumber: string;
+  text: string;
+  refKeyHead1: string;
+  refKeyHead2: string;
+  assignment: string;
+  docHeader: string;
+  refKey2: string;
+  variance: number;
+  /** Result of the last simulate run, if one has been done. */
+  simulated: { at: string; ok: boolean; message: string } | null;
 }
 
 export interface MatchLine {
@@ -105,6 +140,10 @@ export interface MatchLine {
   vat: string;
   wht: string;
   gl: string;
+  /** Item number as it reads on the invoice. */
+  itemNo: string;
+  /** Where this line ended up, for the dot on its row. */
+  state: LineMatchState;
 }
 
 export interface MetadataFinding {
@@ -187,6 +226,10 @@ export interface Invoice {
   grnSource: RefSource;
 
   lines: MatchLine[];
+  /** The GRN side of the line comparison. */
+  grnLines: GrnLine[];
+  /** The ERP payload, shown and edited on the posting stage. */
+  erp: ErpPayload;
 
   /**
    * Documents attached to the invoice that are not matching inputs: tax
