@@ -36,6 +36,7 @@ import {
   SignOutIcon,
   SparkleIcon,
   SuitcaseSimpleIcon,
+  TrashIcon,
   UsersThreeIcon,
 } from '@neofloai/atoms/icons';
 import { NAVBAR_META_ICON_PX as META_PX } from '@neofloai/atoms';
@@ -120,6 +121,117 @@ function NavRow({
   );
 }
 
+/**
+ * Conversations with Neo, in the rail.
+ *
+ * Here rather than in the bar or on the landing page because it has to survive
+ * starting a new question: a list that vanishes the moment you begin is not a
+ * history. The rail is the one place on screen that never goes away.
+ *
+ * Hidden when the rail is collapsed — a 28px square cannot hold a title, and
+ * guessing between three truncated threads is worse than opening the rail.
+ */
+function ThreadList() {
+  const { conversations, activeConversationId, screen, openConversation, deleteConversation, clearChat, goTo } =
+    useStore();
+
+  const startNew = () => {
+    clearChat();
+    goTo('ask-neo');
+  };
+
+  return (
+    <Stack sx={{ flex: 1, minHeight: 0, gap: 0.5, pt: 1 }}>
+      <Stack direction="row" sx={{ alignItems: 'center', gap: 0.5, pl: 1, pr: 0.25 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }} noWrap>
+          Threads
+        </Typography>
+        <Tooltip title="New question" placement="right">
+          <IconButton
+            variant="secondary"
+            appearance="text"
+            size="sm"
+            aria-label="Start a new question"
+            onClick={startNew}
+          >
+            <PlusIcon size={14} />
+          </IconButton>
+        </Tooltip>
+      </Stack>
+
+      {conversations.length === 0 ? (
+        <Typography variant="caption" color="text.disabled" sx={{ px: 1, whiteSpace: 'normal' }}>
+          Nothing yet. What you ask Neo shows up here.
+        </Typography>
+      ) : (
+        <Stack sx={{ flex: 1, minHeight: 0, overflowY: 'auto', gap: 0.25 }}>
+          {conversations.map((conversation) => {
+            const open = screen === 'ask-neo' && conversation.id === activeConversationId;
+            return (
+              <Stack
+                key={conversation.id}
+                direction="row"
+                sx={{
+                  alignItems: 'center',
+                  borderRadius: 1,
+                  backgroundColor: open ? 'action.selected' : undefined,
+                  // The delete only shows on the row you are pointing at, so a
+                  // column of threads is titles and not a column of bins.
+                  '& .thread-delete': { opacity: 0 },
+                  '&:hover .thread-delete': { opacity: 1 },
+                  '&:focus-within .thread-delete': { opacity: 1 },
+                  '&:hover': { backgroundColor: open ? 'action.selected' : 'action.hover' },
+                }}
+              >
+                <Box
+                  component="button"
+                  type="button"
+                  aria-current={open ? 'page' : undefined}
+                  onClick={() => openConversation(conversation.id)}
+                  sx={{
+                    flex: 1,
+                    minWidth: 0,
+                    textAlign: 'left',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    font: 'inherit',
+                    color: 'inherit',
+                    px: 1,
+                    py: 0.5,
+                  }}
+                >
+                  <Typography
+                    variant="body2"
+                    weight={open ? 'medium' : undefined}
+                    color={open ? 'text.primary' : 'text.secondary'}
+                    noWrap
+                    sx={{ display: 'block' }}
+                  >
+                    {conversation.title}
+                  </Typography>
+                </Box>
+                <Tooltip title="Delete" placement="right">
+                  <IconButton
+                    className="thread-delete"
+                    variant="secondary"
+                    appearance="text"
+                    size="sm"
+                    aria-label={`Delete ${conversation.title}`}
+                    onClick={() => deleteConversation(conversation.id)}
+                  >
+                    <TrashIcon size={14} />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+            );
+          })}
+        </Stack>
+      )}
+    </Stack>
+  );
+}
+
 function NavRail() {
   const { screen, goTo, profile, invoices } = useStore();
   const { collapsed } = React.useContext(ShellContext);
@@ -186,6 +298,8 @@ function NavRail() {
             )}
           </Box>
         ))}
+
+        {!collapsed && <ThreadList />}
       </Stack>
 
       <Divider />

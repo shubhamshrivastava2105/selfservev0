@@ -20,7 +20,6 @@ import {
   CaretDownIcon,
   CheckCircleIcon,
   CheckIcon,
-  ClockCounterClockwiseIcon,
   DatabaseIcon,
   FilePdfIcon,
   PaperPlaneRightIcon,
@@ -208,79 +207,6 @@ function ResumeMessage() {
           {closed ? 'Open it' : 'Resume'}
         </Button>
       </Stack>
-    </NeoMessage>
-  );
-}
-
-/**
- * Conversations already had, on the page you land on.
- *
- * The point of history is picking a thread back up, and the moment that is
- * cheapest to offer is the moment before you have typed anything. Behind a
- * button in the bar it is only found by someone who already suspects it exists.
- *
- * Recent ones only. The bar's menu is the whole list, for when you are already
- * inside a thread and this page is not on screen.
- */
-function HistoryMessage() {
-  const { conversations, openConversation } = useStore();
-  const [showAll, setShowAll] = React.useState(false);
-  if (conversations.length === 0) return null;
-
-  const RECENT = 3;
-  const shown = showAll ? conversations : conversations.slice(0, RECENT);
-  const hidden = conversations.length - shown.length;
-
-  return (
-    <NeoMessage>
-      <Typography variant="body2">
-        {conversations.length === 1 ? 'You asked me this before.' : 'You asked me these before.'}
-      </Typography>
-      <Stack sx={{ gap: 1 }}>
-        {shown.map((conversation) => {
-          const questions = conversation.turns.filter((t) => t.role === 'user').length;
-          return (
-            <Stack
-              key={conversation.id}
-              direction="row"
-              sx={{
-                gap: 2,
-                alignItems: 'center',
-                p: 1.5,
-                borderRadius: 1,
-                border: '1px solid',
-                borderColor: 'divider',
-              }}
-            >
-              <Stack sx={{ flex: 1, minWidth: 0, gap: 0.25 }}>
-                <Typography variant="body2" weight="medium" noWrap>
-                  {conversation.title}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {questions} question{questions === 1 ? '' : 's'} ·{' '}
-                  {formatRelative(conversation.lastAt)}
-                </Typography>
-              </Stack>
-              <Button
-                variant="secondary"
-                appearance="outline"
-                size="sm"
-                endIcon={<ArrowRightIcon size={16} />}
-                onClick={() => openConversation(conversation.id)}
-              >
-                Open
-              </Button>
-            </Stack>
-          );
-        })}
-      </Stack>
-      {hidden > 0 && (
-        <Box>
-          <Button variant="secondary" appearance="text" size="sm" onClick={() => setShowAll(true)}>
-            {hidden} more
-          </Button>
-        </Box>
-      )}
     </NeoMessage>
   );
 }
@@ -686,89 +612,6 @@ function SourcePicker() {
   );
 }
 
-/* ── History ──────────────────────────────────────────────────────────── */
-
-/**
- * Conversations already had.
- *
- * "New question" used to throw the thread away, which made asking a follow-up
- * tomorrow mean retyping today. Now it puts it away instead, and this is where
- * it went. Reopening one shows the answers as they were given rather than
- * re-running them, so a conversation is a record and not a live query.
- */
-function HistoryMenu() {
-  const { conversations, activeConversationId, openConversation, deleteConversation } = useStore();
-  const [anchor, setAnchor] = React.useState<HTMLElement | null>(null);
-  if (conversations.length === 0) return null;
-
-  return (
-    <>
-      <Button
-        variant="secondary"
-        appearance="outline"
-        size="sm"
-        startIcon={<ClockCounterClockwiseIcon size={16} />}
-        endIcon={<CaretDownIcon size={14} />}
-        onClick={(event) => setAnchor(event.currentTarget)}
-        sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
-      >
-        History
-      </Button>
-
-      <Menu
-        anchorEl={anchor}
-        open={Boolean(anchor)}
-        onClose={() => setAnchor(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-        sx={{ '& .MuiMenu-paper': { minWidth: 340, maxWidth: 440 } }}
-      >
-        <MenuItem variant="secondary" disabled>
-          {conversations.length} conversation{conversations.length === 1 ? '' : 's'}
-        </MenuItem>
-        {conversations.map((conversation) => {
-          const questions = conversation.turns.filter((t) => t.role === 'user').length;
-          return (
-            <MenuItem
-              key={conversation.id}
-              selected={conversation.id === activeConversationId}
-              onClick={() => {
-                openConversation(conversation.id);
-                setAnchor(null);
-              }}
-              sx={{ alignItems: 'flex-start' }}
-            >
-              <Stack sx={{ flex: 1, minWidth: 0, gap: 0 }}>
-                <Typography variant="body2" noWrap>
-                  {conversation.title}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {questions} question{questions === 1 ? '' : 's'} ·{' '}
-                  {formatRelative(conversation.lastAt)}
-                </Typography>
-              </Stack>
-              <Tooltip title="Delete">
-                <IconButton
-                  variant="secondary"
-                  appearance="text"
-                  size="sm"
-                  aria-label={`Delete ${conversation.title}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    deleteConversation(conversation.id);
-                  }}
-                >
-                  <TrashIcon />
-                </IconButton>
-              </Tooltip>
-            </MenuItem>
-          );
-        })}
-      </Menu>
-    </>
-  );
-}
-
 /* ── The screen ───────────────────────────────────────────────────────── */
 
 export function AskNeoScreen() {
@@ -855,22 +698,18 @@ export function AskNeoScreen() {
   return (
     <>
       <ShellBar>
-        {/* Only while a thread is open. On the landing page the recent list is
-            already on the page, and two ways to the same thing in one view is
-            one too many. */}
+        {/* Threads live in the rail, which never goes away. This is the action
+            on the thread you are reading, not a second route to the list. */}
         {chat.length > 0 && (
-          <>
-            <Button
-              variant="secondary"
-              appearance="outline"
-              size="sm"
-              startIcon={<ArrowLeftIcon size={16} />}
-              onClick={clearChat}
-            >
-              New question
-            </Button>
-            <HistoryMenu />
-          </>
+          <Button
+            variant="secondary"
+            appearance="outline"
+            size="sm"
+            startIcon={<ArrowLeftIcon size={16} />}
+            onClick={clearChat}
+          >
+            New question
+          </Button>
         )}
       </ShellBar>
 
@@ -910,7 +749,6 @@ export function AskNeoScreen() {
                   <>
                     <BriefingMessage />
                     <ResumeMessage />
-                    <HistoryMessage />
                     <ChecklistMessage />
                   </>
                 )}
