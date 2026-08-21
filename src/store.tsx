@@ -82,6 +82,20 @@ export interface Profile {
   onboarded: boolean;
 }
 
+/**
+ * The three things this person does on the way to their first posted invoice.
+ *
+ * Their own actions, not the workspace's history — someone joining a team that
+ * already posts invoices has still not reviewed one themselves. Persisted,
+ * because a journey that resets on reload would put the guide back in front of
+ * somebody who has finished it.
+ */
+export interface FirstRun {
+  ingested: boolean;
+  reviewed: boolean;
+  posted: boolean;
+}
+
 interface Store {
   screen: Screen;
   goTo: (screen: Screen) => void;
@@ -129,6 +143,9 @@ interface Store {
   /** Documents excluded from answers, by id. */
   excludedDocumentIds: string[];
   setDocumentIncluded: (id: string, included: boolean) => void;
+
+  /** How far this person has got on their first invoice. */
+  firstRun: FirstRun;
 
   /**
    * Which sources Ask Neo may draw on. Null means every source the person can
@@ -302,6 +319,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [excludedDocumentIds, setExcludedDocumentIds] = React.useState<string[]>(() =>
     loadPersisted<string[]>('excludedDocuments', []),
   );
+  const [firstRun, setFirstRun] = React.useState<FirstRun>(() =>
+    loadPersisted<FirstRun>('firstRun', { ingested: false, reviewed: false, posted: false }),
+  );
+  const did = React.useCallback(
+    (step: keyof FirstRun) => setFirstRun((previous) => ({ ...previous, [step]: true })),
+    [],
+  );
   const [selectedSources, setSelectedSources] = React.useState<SourceId[] | null>(() =>
     loadPersisted<SourceId[] | null>('sources', null),
   );
@@ -325,6 +349,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     () => savePersisted('excludedDocuments', excludedDocumentIds),
     [excludedDocumentIds],
   );
+  React.useEffect(() => savePersisted('firstRun', firstRun), [firstRun]);
   React.useEffect(() => savePersisted('sources', selectedSources), [selectedSources]);
   React.useEffect(() => savePersisted('conversations', conversations), [conversations]);
 
@@ -606,8 +631,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           ),
         };
       });
+      did('reviewed');
     },
-    [patch, actor],
+    [patch, actor, did],
   );
 
   /* ── Stages ─────────────────────────────────────────────────────────── */
@@ -641,13 +667,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const advanceToMatching = React.useCallback<Store['advanceToMatching']>(
-    (id) => runAndStore(id, 'Advanced to matching'),
-    [runAndStore],
+    (id) => {
+      // Proceeding is the person saying they have looked at the reading — a
+      // clean invoice needs no correction, and should still count as checked.
+      did('reviewed');
+      runAndStore(id, 'Advanced to matching');
+    },
+    [runAndStore, did],
   );
 
   const rerunMatching = React.useCallback<Store['rerunMatching']>(
     (id) => runAndStore(id, 'Matching re-run'),
-    [runAndStore],
+    [runAndStore, did],
   );
 
   /** An invoice that clears matching surfaces at ERP posting. */
@@ -681,6 +712,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         overrides: [...invoice.overrides, { rule, reason, at: stamp(), actor }],
         audit: appendAudit(invoice, 'Override recorded', `${rule}. Reason: ${reason}`),
       }));
+      did('reviewed');
       log('Override recorded', rule);
     },
     [patch, actor, log],
@@ -711,6 +743,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         terminalAt: stamp(),
         audit: appendAudit(invoice, 'Posted to Zoho Books', `${reference}. Document attached to the bill.`),
       }));
+      did('posted');
       log('Invoice posted', reference);
     },
     [patch, actor, log],
@@ -722,6 +755,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
    */
   const markExported = React.useCallback<Store['markExported']>(
     (ids) => {
+      did('posted');
       setInvoices((previous) =>
         previous.map((invoice) => {
           if (!ids.includes(invoice.id)) return invoice;
@@ -963,6 +997,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setSampleBatch(batch);
     const built = buildSamples(batch);
     setInvoices((previous) => [...built, ...previous]);
+    did('ingested');
     setSources((previous) => [
       {
         id: `src-sample${batch > 1 ? `-${batch}` : ''}`,
@@ -981,6 +1016,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setUploadBatch(batch);
     const built = buildUpload(batch);
     setInvoices((previous) => [built, ...previous]);
+    did('ingested');
     log('Invoice uploaded', `${built.number} with its PO and GRN`);
   }, [uploadBatch, log]);
 
@@ -1037,6 +1073,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           }),
         );
         setInvoices((previous) => [...built, ...previous]);
+        did('ingested');
         log(
           'Documents uploaded',
           `${files.length} files, ${built.length} invoice${built.length === 1 ? '' : 's'} created`,
@@ -1216,6 +1253,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setMemory(MEMORY_PATTERNS);
       // Uploads and source choices are the user's, so a scenario leaves them be.
       setExcludedDocumentIds([]);
+      setFirstRun({ ingested: false, reviewed: false, posted: false });
       setDiscoverableWorkspaces(DISCOVERABLE_WORKSPACES);
       setConversations([]);
       setActiveConversationId(null);
@@ -1546,6 +1584,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setUploads((previous) => previous.filter((d) => d.id !== id));
       log('Document moved', `${target?.name ?? id} left the reading library.`);
     },
+    firstRun,
     excludedDocumentIds,
     setDocumentIncluded: (id, included) => {
       const target = documents.find((d) => d.id === id);

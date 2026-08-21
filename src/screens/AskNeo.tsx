@@ -16,6 +16,7 @@ import {
 } from '@neofloai/atoms';
 import {
   ArrowRightIcon,
+  CheckCircleIcon,
   CaretDownIcon,
   CheckIcon,
   DatabaseIcon,
@@ -29,6 +30,7 @@ import { classifyFilename } from '../classify';
 import { StatusChip } from '../components/common';
 import { ShellBar } from '../components/shell';
 import { answerQuestion, availableSources, suggestedQuestions } from '../neo';
+import { isTerminal } from '../engine';
 import { money } from '../engine';
 import { formatRelative } from '../clock';
 import type { ChatTurn, DocumentKind } from '../types';
@@ -192,75 +194,134 @@ function BriefingMessage() {
 }
 
 /**
- * The path to a first posted invoice, on a first visit only.
+ * The path to a first posted invoice, and the way to walk it.
  *
- * Three things, and every one is the product doing its job — nothing about
- * setup, because matching, tolerances and the ERP connection arrive filled in.
+ * Every step is a link to where that step happens — the queue to bring an
+ * invoice in, the invoice that needs a person to check it, the one waiting to
+ * post. Not a description of the product: the thing you click to use it.
  *
- * No progress on it, and that is the point. This shows on a first landing and
- * only then, so by definition none of it has happened yet: a counter would read
- * 0 of 3 every time it was ever seen, and struck-through lines would be
- * claiming credit for work the workspace did before this person arrived. It is
- * an explanation of the shape, which is what somebody who just got here needs.
+ * It stays until all three are done, whatever visit that takes, then never
+ * appears again. Which is what makes the ticks worth having — a card that showed
+ * once could only ever say nothing was done yet. And what counts as done is this
+ * person's own actions, so joining a team that already posts invoices does not
+ * strike through work somebody else did.
  */
 function FirstStepsMessage() {
-  const { invoices, goTo } = useStore();
+  const { firstRun, invoices, goTo, openInvoice } = useStore();
+
+  /** The invoice this step is about, so a click lands on the work itself. */
+  const needsReview = invoices.find((i) => i.status === 'Action Required') ?? invoices[0];
+  const readyToPost = invoices.find((i) => i.stage === 'posting' && !isTerminal(i));
+
   const steps = [
-    'An invoice arrives, and gets read',
-    'You check the reading and the match',
-    'It posts to your books',
+    {
+      key: 'ingested' as const,
+      label: 'Bring an invoice in',
+      detail: 'Upload one, or run the sample set.',
+      done: firstRun.ingested,
+      action: 'Open the queue',
+      go: () => goTo('queue'),
+    },
+    {
+      key: 'reviewed' as const,
+      label: 'Check the reading and the match',
+      detail: 'Correct anything misread. Everything else it has already checked.',
+      done: firstRun.reviewed,
+      action: needsReview ? `Review ${needsReview.number}` : 'Open the queue',
+      go: () => (needsReview ? openInvoice(needsReview.id) : goTo('queue')),
+    },
+    {
+      key: 'posted' as const,
+      label: 'Post it to your books',
+      detail: 'Simulate first, then post. Or download it if no ERP is connected.',
+      done: firstRun.posted,
+      action: readyToPost ? `Post ${readyToPost.number}` : 'Open the queue',
+      go: () => (readyToPost ? openInvoice(readyToPost.id) : goTo('queue')),
+    },
   ];
+
+  const doneCount = steps.filter((step) => step.done).length;
+  // Finished for good: from here the briefing and the resume card are the page.
+  if (doneCount === steps.length) return null;
+  const next = steps.find((step) => !step.done);
 
   return (
     <NeoMessage>
       <Typography variant="body2">
-        Three things happen on the way to your first posted invoice. That is the whole path.
+        {doneCount === 0
+          ? 'Three steps to your first posted invoice. Each one takes you where it happens.'
+          : `${doneCount} of ${steps.length} done. ${next?.label ?? ''} next.`}
       </Typography>
       <Stack
         sx={{ borderRadius: 1, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}
         divider={<Divider />}
       >
-        {steps.map((label, index) => (
-          <Stack
-            key={label}
-            direction="row"
-            sx={{ gap: 1.5, alignItems: 'center', px: 2, py: 1.25 }}
-          >
-            <Box
+        {steps.map((step, index) => {
+          const isNext = step === next;
+          return (
+            <Stack
+              key={step.key}
+              direction="row"
               sx={{
-                width: 20,
-                height: 20,
-                flexShrink: 0,
-                borderRadius: 999,
-                display: 'grid',
-                placeItems: 'center',
-                border: '1px solid',
-                borderColor: 'divider',
+                gap: 1.5,
+                alignItems: 'center',
+                px: 2,
+                py: 1.5,
+                backgroundColor: isNext ? 'action.hover' : undefined,
               }}
-              aria-hidden
             >
-              <Typography variant="caption" color="text.secondary">
-                {index + 1}
-              </Typography>
-            </Box>
-            <Typography variant="body2" sx={{ flex: 1 }}>
-              {label}
-            </Typography>
-            {/* One way in, on the step it belongs to. Suppressed while the
-                workspace is empty, because the card above already carries it. */}
-            {index === 0 && invoices.length > 0 && (
-              <Button
-                variant="secondary"
-                appearance="outline"
-                size="sm"
-                endIcon={<ArrowRightIcon size={14} />}
-                onClick={() => goTo('queue')}
+              <Box
+                sx={{
+                  width: 20,
+                  height: 20,
+                  flexShrink: 0,
+                  borderRadius: 999,
+                  display: 'grid',
+                  placeItems: 'center',
+                  color: step.done ? 'success.main' : 'text.secondary',
+                  border: step.done ? 'none' : '1px solid',
+                  borderColor: 'divider',
+                }}
+                aria-hidden
               >
-                Open the queue
-              </Button>
-            )}
-          </Stack>
-        ))}
+                {step.done ? (
+                  <CheckCircleIcon size={18} />
+                ) : (
+                  <Typography variant="caption" color="inherit">
+                    {index + 1}
+                  </Typography>
+                )}
+              </Box>
+              <Stack sx={{ flex: 1, minWidth: 0, gap: 0 }}>
+                <Typography
+                  variant="body2"
+                  weight={isNext ? 'medium' : undefined}
+                  sx={{ textDecoration: step.done ? 'line-through' : 'none' }}
+                  color={step.done ? 'text.secondary' : 'text.primary'}
+                >
+                  {step.label}
+                </Typography>
+                {/* Only on the step being asked for: three explanations at once
+                    is a wall, and the done ones need no instructions. */}
+                {isNext && (
+                  <Typography variant="caption" color="text.secondary">
+                    {step.detail}
+                  </Typography>
+                )}
+              </Stack>
+              {isNext && (
+                <Button
+                  size="sm"
+                  endIcon={<ArrowRightIcon size={14} />}
+                  onClick={step.go}
+                  sx={{ flexShrink: 0, whiteSpace: 'nowrap' }}
+                >
+                  {step.action}
+                </Button>
+              )}
+            </Stack>
+          );
+        })}
       </Stack>
       <Typography variant="caption" color="text.secondary">
         Nothing to configure first — matching, tolerances and your ERP connection are already set.
@@ -850,13 +911,13 @@ export function AskNeoScreen() {
                   </Typography>
                 </Stack>
 
-                {/* A first visit gets the steps and nothing else to read. Once
-                    there is a last time to compare against, the briefing and
-                    the resume card are the useful things. */}
+                {/* The steps lead until they are finished — that is the whole
+                    point of them, and gating on the first visit would mean
+                    abandoning anyone who came back partway. The briefing is a
+                    comparison, so it waits for a last time to compare against. */}
                 <StartHereMessage />
-                {firstVisit ? (
-                  <FirstStepsMessage />
-                ) : (
+                <FirstStepsMessage />
+                {!firstVisit && (
                   <>
                     <BriefingMessage />
                     <ResumeMessage />
