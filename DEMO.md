@@ -145,10 +145,10 @@ and stay out of reporting.
 71% confidence, and underneath it Neo offers `Redwood Office Supply` from what it already
 learned. Click to accept; it is never filled in behind you.
 
-Acknowledge the rest, run matching, then on **Coding per line** set the first line's GL to
-`6200 · Office supplies`. That is the third acknowledgment, so the memory forms in front of
-you and is immediately offered on the second line. Confirm it in **Workflow → Memory**:
-the GL pattern now reads **Live · 3**.
+Run matching, then open the **Coding** tab and set a line's VAT code. Once the same code has
+been chosen enough times for that vendor, the pattern is remembered and offered back on the
+next line. GL is not set by hand: the ERP derives it from the purchase order and returns it
+on a **Simulate**.
 
 ## 6. Ask Neo, in the workflow versus on the page (90 seconds)
 

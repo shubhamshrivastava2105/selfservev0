@@ -73,6 +73,8 @@ The matching engine computes. These are not drawn states.
   beside it. A bulk download does not close an invoice that has not cleared matching.
 - **Reporting computes** cycle time, touch time, time to first processed invoice and the
   share matched against ERP data from the records in state.
+- **Tax coding is on matching and on posting**, sharing the same values. GL is not entered
+  by hand anywhere: the ERP derives it from the purchase order and returns it on a Simulate.
 - **Ask Neo answers from live state** with citations, and says "I don't have enough
   information" rather than guessing. Open it from any screen with the Ask Neo button;
   opened from an invoice, it answers about that invoice.
@@ -138,10 +140,10 @@ next one.
 
 Atoms' `Select` can only take an accessible name from its visible `label` prop. It omits
 `slotProps`, and MUI 9 dropped the nested `SelectProps` forward, so a bare select in a
-table cell has no name for a screen reader. Two places work around it: coding uses
-labeled fields instead of a grid of bare selects, and the members table uses a named
-button with a menu. This is worth an Atoms component request if coding grids become
-common.
+table cell has no name for a screen reader, and naming it means printing the column
+heading again on every row. Coding grids and the members table both use a named button
+with a menu instead (`components/CodePicker.tsx`), which carries the name on the control.
+Worth an Atoms component request.
 
 ## 6. Edge cases not built
 
