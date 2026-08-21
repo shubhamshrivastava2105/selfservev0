@@ -131,21 +131,28 @@ export function InvoiceDetailScreen() {
         onClick: () => advanceToPosting(invoice.id),
       };
     }
-    // Posting where an ERP is connected, export where none is.
+    /**
+     * The action says where the invoice is going. With an ERP connected that is
+     * a posting; without one the matched data comes to you as a file instead.
+     * Naming it either way beats a generic Proceed that means two things.
+     */
     const posts = connections.zohoBooks && !invoice.isSample;
+    if (posts) {
+      return {
+        label: 'Post to ERP',
+        // A dry run comes before a commit, which is why the product shows the
+        // primary grayed next to a live Simulate.
+        disabled: readOnly || !matchClear || missingTax > 0 || !invoice.erp.simulated,
+        onClick: () => postInvoice(invoice.id),
+      };
+    }
     return {
-      label: posts ? 'Proceed' : 'Download CSV',
-      // A dry run comes before a commit, which is why the product shows Proceed
-      // grayed next to a live Simulate.
-      disabled:
-        readOnly || (posts && (!matchClear || missingTax > 0 || !invoice.erp.simulated)),
+      // No simulation to wait for: nothing is being written anywhere.
+      label: 'Download CSV',
+      disabled: readOnly || !matchClear,
       onClick: () => {
-        if (posts) {
-          postInvoice(invoice.id);
-        } else {
-          downloadCsv(`${invoice.number}-matched-data.csv`, buildCsv([invoice], config));
-          markExported([invoice.id]);
-        }
+        downloadCsv(`${invoice.number}-matched-data.csv`, buildCsv([invoice], config));
+        markExported([invoice.id]);
       },
     };
   })();
