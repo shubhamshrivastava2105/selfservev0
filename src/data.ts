@@ -1499,6 +1499,11 @@ export const INDEXED_DOCUMENTS: IndexedDocument[] = [
         page: 143,
         text: 'An invoice must be disputed within 30 days of receipt. After that it is deemed accepted, whether or not it was matched.',
       },
+      {
+        topics: ['termination', 'terminate', 'exit', 'notice period', 'cancel'],
+        page: 186,
+        text: 'Either party may terminate for convenience on 90 days written notice. Purchase orders already raised are honored to completion, and consigned stock returns within 30 days.',
+      },
     ],
   },
   {
@@ -1548,7 +1553,11 @@ export const INDEXED_DOCUMENTS: IndexedDocument[] = [
   },
 ];
 
-/** An uploaded document, for the Ask Neo upload action. */
+/**
+ * A long sample document, for showing what a big upload does without needing a
+ * real 187-page PDF to hand. Marked as a sample wherever it appears, because a
+ * real upload of a PDF cannot be read in the browser and this one can.
+ */
 export function buildUploadedDocument(batch: number): IndexedDocument {
   const variants = [
     {
@@ -1590,5 +1599,7 @@ export function buildUploadedDocument(batch: number): IndexedDocument {
     indexedAt: at(0),
     origin: 'Upload',
     passages: pick.passages,
+    contentRead: true,
+    isSample: true,
   };
 }

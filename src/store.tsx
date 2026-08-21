@@ -1,8 +1,10 @@
 /**
  * One store for the whole prototype, held in React state.
  *
- * Nothing is persisted on purpose: a prototype that remembers the last person
- * who used it cannot be reset before the next demo.
+ * Almost nothing is persisted on purpose: a prototype that remembers the last
+ * person who used it cannot be reset before the next demo. The exception is what
+ * a person put in by hand — an uploaded document, and which sources they left
+ * switched on — because losing those is a bug, not a reset.
  */
 
 import * as React from 'react';
@@ -25,7 +27,10 @@ import {
   buildUploadedDocument,
   readDomain,
 } from './data';
+import { load as loadPersisted, save as savePersisted } from './persist';
+import { documentFromFile } from './upload';
 import { deriveStatus, runMatching, stamp } from './engine';
+import { availableSources } from './neo';
 import { classifyFilename } from './classify';
 import { at, formatDate, now } from './clock';
 import type { ScenarioId } from './scenarios';
@@ -41,6 +46,7 @@ import type {
   Invoice,
   InvoiceSource,
   Member,
+  SourceId,
   MemoryPattern,
   RoutePath,
   Screen,
@@ -115,9 +121,26 @@ interface Store {
   /** State rather than a constant, so a scenario can make them all private. */
   discoverableWorkspaces: DiscoverableWorkspace[];
 
+  /** Seeded sample documents plus whatever the user uploaded, newest first. */
   documents: IndexedDocument[];
-  addDocument: () => void;
+  /**
+   * Files the user picked. Real names, real sizes, and real passages where the
+   * browser could read the text. Returns what it could not read, so the caller
+   * can say so rather than the upload failing quietly.
+   */
+  addDocuments: (files: File[]) => Promise<{ indexed: number; unread: string[] }>;
+  /** A long document with quotable passages, for demonstrating the capability. */
+  addSampleDocument: () => void;
   removeDocument: (id: string) => void;
+
+  /**
+   * Which sources Ask Neo may draw on. Null means every source the person can
+   * reach, which is the default and is not the same as an empty list.
+   */
+  selectedSources: SourceId[] | null;
+  setSourceSelected: (id: SourceId, on: boolean) => void;
+  /** The signed-in person's member record, which carries their workflow roles. */
+  viewer: Member | null;
 
   /** The last invoice opened, so a return visit can offer to resume it. */
   lastOpenedInvoiceId: string | null;
@@ -252,8 +275,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [askNeoOpen, setAskNeoOpen] = React.useState(false);
   const [askNeoInvoiceId, setAskNeoInvoiceId] = React.useState<string | null>(null);
   const [handoffQuestion, setHandoffQuestion] = React.useState<string | null>(null);
-  const [documents, setDocuments] = React.useState<IndexedDocument[]>(INDEXED_DOCUMENTS);
-  const [documentBatch, setDocumentBatch] = React.useState(0);
+  /**
+   * Uploads outlive a reload; the seeded corpus does not need to, since it comes
+   * back from data.ts. Kept apart so a change to the seeds still shows up.
+   */
+  const [uploads, setUploads] = React.useState<IndexedDocument[]>(() =>
+    loadPersisted<IndexedDocument[]>('uploads', []),
+  );
+  const [hiddenSeedIds, setHiddenSeedIds] = React.useState<string[]>(() =>
+    loadPersisted<string[]>('hiddenSeeds', []),
+  );
+  const [selectedSources, setSelectedSources] = React.useState<SourceId[] | null>(() =>
+    loadPersisted<SourceId[] | null>('sources', null),
+  );
   const [lastOpenedInvoiceId, setLastOpenedInvoiceId] = React.useState<string | null>(null);
   const [discoverableWorkspaces, setDiscoverableWorkspaces] =
     React.useState<DiscoverableWorkspace[]>(DISCOVERABLE_WORKSPACES);
@@ -275,6 +309,46 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const actor = profile.firstName
     ? `${profile.firstName} ${profile.lastName}`.trim()
     : `${SIGNED_IN.firstName} ${SIGNED_IN.lastName}`;
+
+  /* ── What a person put in by hand, kept across reloads ─────────────── */
+
+  React.useEffect(() => savePersisted('uploads', uploads), [uploads]);
+  React.useEffect(() => savePersisted('hiddenSeeds', hiddenSeedIds), [hiddenSeedIds]);
+  React.useEffect(() => savePersisted('sources', selectedSources), [selectedSources]);
+
+  /** Uploads first, then the seeded corpus minus anything the user removed. */
+  const documents = React.useMemo(
+    () => [...uploads, ...INDEXED_DOCUMENTS.filter((d) => !hiddenSeedIds.includes(d.id))],
+    [uploads, hiddenSeedIds],
+  );
+
+  /**
+   * The signed-in person's member record. Matched on the address they signed in
+   * with, falling back to the seeded owner so the prototype has a viewer before
+   * anyone signs up.
+   */
+  const viewer = React.useMemo(
+    () =>
+      members.find((m) => m.email.toLowerCase() === profile.email.toLowerCase()) ??
+      members[0] ??
+      null,
+    [members, profile.email],
+  );
+
+  /** The sources this person could switch on. Membership decides. */
+  const reachable = React.useMemo(
+    () =>
+      availableSources({
+        invoices,
+        memory,
+        config,
+        members,
+        documents,
+        connections,
+        viewer,
+      }),
+    [invoices, memory, config, members, documents, connections, viewer],
+  );
 
   const log = React.useCallback(
     (action: string, detail?: string) => {
@@ -1087,7 +1161,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setConnections(DEFAULT_CONNECTIONS);
       setMembers(MEMBERS);
       setMemory(MEMORY_PATTERNS);
-      setDocuments(INDEXED_DOCUMENTS);
+      // Uploads and source choices are the user's, so a scenario leaves them be.
+      setHiddenSeedIds([]);
       setDiscoverableWorkspaces(DISCOVERABLE_WORKSPACES);
       setChat([]);
       setPanelChat([]);
@@ -1099,7 +1174,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setVisibility('public');
       setSampleBatch(0);
       setUploadBatch(0);
-      setDocumentBatch(0);
       setActivity([]);
       setProgress({
         ingested: false,
@@ -1394,18 +1468,47 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     members,
     memory,
     documents,
-    addDocument: () => {
-      const batch = documentBatch + 1;
-      setDocumentBatch(batch);
+    addDocuments: async (files) => {
+      const built = await Promise.all(files.map((file) => documentFromFile(file, now())));
+      // Re-uploading the same file replaces it rather than indexing it twice.
+      setUploads((previous) => [
+        ...built,
+        ...previous.filter((p) => !built.some((b) => b.id === p.id)),
+      ]);
+      const unread = built.filter((d) => !d.contentRead).map((d) => d.name);
+      const pages = built.reduce((sum, d) => sum + d.pages, 0);
+      log(
+        built.length === 1 ? 'Document indexed' : `${built.length} documents indexed`,
+        `${built.map((d) => d.name).join(', ')} · ${pages} pages`,
+      );
+      return { indexed: built.length, unread };
+    },
+    addSampleDocument: () => {
+      const batch = uploads.filter((d) => d.isSample).length + 1;
       const built = buildUploadedDocument(batch);
-      setDocuments((previous) => [built, ...previous]);
-      log('Document indexed', `${built.name} · ${built.pages} pages`);
+      setUploads((previous) => [built, ...previous.filter((p) => p.id !== built.id)]);
+      log('Sample document indexed', `${built.name} · ${built.pages} pages`);
     },
     removeDocument: (id) => {
       const target = documents.find((d) => d.id === id);
-      setDocuments((previous) => previous.filter((d) => d.id !== id));
+      if (uploads.some((d) => d.id === id)) {
+        setUploads((previous) => previous.filter((d) => d.id !== id));
+      } else {
+        // A seed comes back from data.ts on every load, so hiding it has to be
+        // remembered the same way an upload is.
+        setHiddenSeedIds((previous) => [...previous, id]);
+      }
       log('Document removed', `${target?.name ?? id}. Answers stop drawing on it immediately.`);
     },
+    selectedSources,
+    setSourceSelected: (id, on) => {
+      const current = selectedSources ?? reachable.map((s) => s.id);
+      const next = on ? [...new Set([...current, id])] : current.filter((s) => s !== id);
+      setSelectedSources(next);
+      const source = reachable.find((s) => s.id === id);
+      log(on ? 'Source switched on' : 'Source switched off', source?.label ?? id);
+    },
+    viewer,
     workspaceVisibility,
     setWorkspaceVisibility: (visibility) => {
       setVisibility(visibility);

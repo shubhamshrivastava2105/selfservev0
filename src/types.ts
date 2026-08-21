@@ -360,16 +360,45 @@ export interface IndexedDocument {
   origin: 'Upload' | 'Mailbox' | 'Workflow';
   /** Passages an answer can quote back with a page reference. */
   passages: { topics: string[]; page: number; text: string }[];
+  /** Set for a file that came off disk. */
+  sizeBytes?: number;
+  /**
+   * False for a file whose text this prototype could not reach. It is held and
+   * counted, but has no passages, so nothing is quoted from it.
+   */
+  contentRead?: boolean;
+  /** Set for a long document added to demonstrate the capability, not uploaded. */
+  isSample?: boolean;
 }
 
 /** What Ask Neo is allowed to reach on a given surface. */
 export type NeoScope = 'workspace' | 'workflow';
 
 /** A source Ask Neo can ground an answer in, for the summary on the page. */
+/** The workflows a workspace can run. Membership is per person, per workflow. */
+export type WorkflowKey = 'invoiceProcessing' | 'agenticSearch';
+
+export type SourceId =
+  | `workflow:${WorkflowKey}`
+  | 'uploads'
+  | 'integration:zohoBooks'
+  | 'integration:mailbox'
+  | 'integration:ticketing';
+
+export type SourceGroup = 'Workflows' | 'Your uploads' | 'Connected systems';
+
 export interface GroundingSource {
+  id: SourceId;
+  group: SourceGroup;
   label: string;
   detail: string;
   connected: boolean;
+  /**
+   * False when this person cannot reach the source at all — a workflow they hold
+   * no role in. An unavailable source is not offered, rather than offered and
+   * refused.
+   */
+  available: boolean;
 }
 
 export interface Citation {
@@ -386,4 +415,9 @@ export interface ChatTurn {
   ungrounded?: boolean;
   /** True when the surface cannot reach far enough, and the page can. */
   outOfScope?: boolean;
+  /**
+   * True when a source that could have answered is switched off. Distinct from
+   * ungrounded: the material exists, the selection excludes it.
+   */
+  sourceOff?: boolean;
 }

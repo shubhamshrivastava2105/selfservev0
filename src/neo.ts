@@ -9,6 +9,7 @@
 import { money } from './engine';
 import { formatDate, formatDateTime } from './clock';
 import type {
+  SourceId,
   Citation,
   Connections,
   GroundingSource,
@@ -27,6 +28,13 @@ export interface NeoContext {
   members: Member[];
   documents: IndexedDocument[];
   connections: Connections;
+  /** The signed-in person, whose workflow roles decide what is reachable. */
+  viewer?: Member | null;
+  /**
+   * The sources the user has left switched on. Undefined means everything they
+   * can reach, which is what the workflow panel wants.
+   */
+  selectedSources?: SourceId[];
 }
 
 export interface NeoAnswer {
@@ -39,6 +47,8 @@ export interface NeoAnswer {
    * leaving the user to retype it.
    */
   outOfScope?: boolean;
+  /** A source that holds the answer is switched off, rather than absent. */
+  sourceOff?: boolean;
 }
 
 function cite(invoice: Invoice): Citation {
@@ -73,15 +83,82 @@ const GENERIC_TITLE_WORDS = new Set([
 ]);
 
 /**
+ * Topics too broad to identify a passage on their own. A question mentioning
+ * terms is not a question about whichever page happens to say "terms", so these
+ * rank a passage without carrying it.
+ */
+const GENERIC_TOPICS = new Set(['terms', 'notice', 'page', 'invoice', 'vendor', 'amount']);
+
+/**
+ * Query words too broad to earn a topic match. "What are the termination terms"
+ * is a question about termination; letting "terms" score as well is what put a
+ * payment clause above a termination clause.
+ */
+const GENERIC_QUERY_WORDS = new Set([
+  'terms', 'term', 'what', 'with', 'about', 'have', 'does', 'this', 'that', 'when',
+  'where', 'which', 'from', 'page', 'document', 'invoice', 'vendor', 'amount', 'tell',
+]);
+
+/**
  * Answers from an indexed document, with the page it came from.
  *
  * This is the capability the page exists to expose: a 214-page agreement is
  * answerable across its whole length, where a general assistant caps out around
  * thirty pages and refuses the file.
  */
+/**
+ * The part of a passage that answers the question.
+ *
+ * A page of a real document is far longer than a quote should be, and its first
+ * sentences are rarely the ones asked about. So the quote is the best-matching
+ * sentence and its neighbor, rather than the top of the page.
+ */
+function quoteFrom(text: string, words: string[], nameWords: string[]): string {
+  const sentences = text.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 0);
+  if (sentences.length <= 2) return text.slice(0, 320).trim();
+
+  /**
+   * A specific word is worth more than a common one, and a word counts even when
+   * the document inflects it differently — "termination" has to find
+   * "terminate", or a question about ending a contract gets quoted the payment
+   * clause because both mention terms.
+   */
+  /**
+   * Words already in the document's title are skipped. They earned their bonus
+   * at the document level — counting them again inside the text just rewards
+   * whichever sentence happens to repeat the counterparty's name.
+   */
+  const topical = words.filter((w) => !nameWords.some((n) => n.startsWith(w.slice(0, 5))));
+  const scoring = topical.length > 0 ? topical : words;
+
+  const score = (sentence: string) => {
+    const inSentence = sentence.toLowerCase().match(/[a-z][a-z0-9-]{2,}/g) ?? [];
+    return scoring.reduce((total, word) => {
+      const stem = word.slice(0, 5);
+      const hit = inSentence.some((other) => other.startsWith(stem) || word.startsWith(other.slice(0, 5)));
+      return total + (hit ? word.length : 0);
+    }, 0);
+  };
+  let bestAt = 0;
+  let best = -1;
+  sentences.forEach((sentence, index) => {
+    const total = score(sentence);
+    if (total > best) {
+      best = total;
+      bestAt = index;
+    }
+  });
+  if (best <= 0) return sentences.slice(0, 2).join(' ').slice(0, 320).trim();
+
+  const window = sentences.slice(bestAt, bestAt + 2).join(' ').trim();
+  return window.length > 340 ? `${window.slice(0, 320).trim()}…` : window;
+}
+
 function answerFromDocuments(q: string, documents: IndexedDocument[]): NeoAnswer | null {
   const words = q.split(/[^a-z0-9]+/).filter((w) => w.length > 3);
   if (words.length === 0) return null;
+  /** The words that say what the question is about, for scoring topics. */
+  const specific = words.filter((w) => !GENERIC_QUERY_WORDS.has(w));
 
   const hits: { doc: IndexedDocument; page: number; text: string; score: number }[] = [];
   for (const doc of documents) {
@@ -96,12 +173,23 @@ function answerFromDocuments(q: string, documents: IndexedDocument[]): NeoAnswer
     const namedBonus = nameWords.some((w) => q.includes(w)) ? 3 : 0;
 
     for (const passage of doc.passages) {
-      const topical = passage.topics.reduce(
-        (total, topic) => total + (q.includes(topic) ? 2 : words.some((w) => topic.includes(w)) ? 1 : 0),
-        0,
-      );
+      const topical = passage.topics.reduce((total, topic) => {
+        if (GENERIC_TOPICS.has(topic)) {
+          // Ranks a passage, never carries it.
+          return total + (q.includes(topic) ? 1 : 0);
+        }
+        if (q.includes(topic)) return total + 2;
+        return total + (specific.some((w) => topic.includes(w)) ? 1 : 0);
+      }, 0);
       if (topical > 0) {
-        hits.push({ doc, page: passage.page, text: passage.text, score: topical + namedBonus });
+        hits.push({
+          doc,
+          page: passage.page,
+          // The specific words, not every word: an incidental "when" in a
+          // neighboring sentence should not outrank the clause being asked about.
+          text: quoteFrom(passage.text, specific.length > 0 ? specific : words, nameWords),
+          score: topical + namedBonus,
+        });
       }
     }
   }
@@ -109,9 +197,17 @@ function answerFromDocuments(q: string, documents: IndexedDocument[]): NeoAnswer
 
   hits.sort((a, b) => b.score - a.score);
   /**
-   * Only passages that come close to the best match. A loose word overlap on a
-   * shared topic is not an answer, and padding a good citation with two weak
-   * ones is how a grounded answer stops feeling grounded.
+   * An absolute floor before a relative one. A score of 1 is a single word
+   * sharing a prefix with a topic — enough to rank passages against each other,
+   * nowhere near enough to be the answer. Without this floor the nearest weak
+   * match wins by default, which is how a question about termination came back
+   * with a passage about withholding.
+   */
+  if (hits[0].score < 2) return null;
+
+  /**
+   * Then only passages close to the best match. Padding a good citation with two
+   * weak ones is how a grounded answer stops feeling grounded.
    */
   const best = hits[0].score;
   const top = hits.filter((hit) => hit.score >= best * 0.75).slice(0, 2);
@@ -126,45 +222,86 @@ function answerFromDocuments(q: string, documents: IndexedDocument[]): NeoAnswer
   };
 }
 
-/** What Ask Neo can reach, for the grounding summary on the page. */
+/**
+ * What Ask Neo can reach, grouped for the source picker.
+ *
+ * A workflow only appears when the signed-in person holds a role in it: reading
+ * across workflows is what this surface is for, but only across the ones they
+ * are actually part of. Integrations are listed separately because they are
+ * reached through the workspace rather than through any one workflow.
+ */
 export function groundingSources(ctx: NeoContext): GroundingSource[] {
-  const totalPages = ctx.documents.reduce((sum, d) => sum + d.pages, 0);
+  const uploads = ctx.documents.filter((d) => d.origin === 'Upload');
+  const ingested = ctx.documents.filter((d) => d.origin !== 'Upload');
+  const pages = (docs: IndexedDocument[]) => docs.reduce((sum, d) => sum + d.pages, 0);
+  const role = (key: 'invoiceProcessing' | 'agenticSearch') => ctx.viewer?.[key] ?? 'None';
+  const count = (docs: IndexedDocument[]) =>
+    `${docs.length} document${docs.length === 1 ? '' : 's'}, ${pages(docs).toLocaleString('en-US')} pages`;
+
   return [
     {
+      id: 'workflow:invoiceProcessing',
+      group: 'Workflows',
       label: 'Invoice Processing',
       detail: `${ctx.invoices.length} invoice records, with their POs, receipts and audit trails`,
       connected: true,
+      available: role('invoiceProcessing') !== 'None',
     },
     {
-      label: 'Indexed documents',
+      id: 'workflow:agenticSearch',
+      group: 'Workflows',
+      label: 'Agentic Search',
       detail:
-        ctx.documents.length === 0
-          ? 'Nothing indexed yet'
-          : `${ctx.documents.length} documents, ${totalPages.toLocaleString('en-US')} pages`,
-      connected: ctx.documents.length > 0,
+        ingested.length === 0
+          ? 'Nothing has arrived through the workflow yet'
+          : `${count(ingested)}, ingested by the workflow`,
+      connected: true,
+      available: role('agenticSearch') !== 'None',
     },
     {
+      id: 'uploads',
+      group: 'Your uploads',
+      label: 'Documents you uploaded',
+      detail: uploads.length === 0 ? 'Nothing uploaded yet' : `${count(uploads)}, attached by hand`,
+      connected: uploads.length > 0,
+      available: true,
+    },
+    {
+      id: 'integration:zohoBooks',
+      group: 'Connected systems',
       label: 'Zoho Books',
       detail: ctx.connections.zohoBooks
         ? 'Purchase orders, bills, chart of accounts, vendor master'
         : 'Not connected',
       connected: ctx.connections.zohoBooks,
+      available: ctx.connections.zohoBooks,
     },
     {
+      id: 'integration:mailbox',
+      group: 'Connected systems',
       label: 'Mailbox',
       detail: ctx.connections.mailboxProvider
         ? `${ctx.connections.mailboxAddress} · ${ctx.connections.mailboxFolder}`
         : 'Not connected',
       connected: Boolean(ctx.connections.mailboxProvider),
+      available: Boolean(ctx.connections.mailboxProvider),
     },
     {
+      id: 'integration:ticketing',
+      group: 'Connected systems',
       label: 'Ticketing',
       detail: ctx.connections.ticketing
         ? `${ctx.connections.ticketing === 'freshdesk' ? 'Freshdesk' : 'Zendesk'} tickets and their attachments`
         : 'Not connected',
       connected: Boolean(ctx.connections.ticketing),
+      available: Boolean(ctx.connections.ticketing),
     },
   ];
+}
+
+/** The sources a person could switch on, whether or not they have. */
+export function availableSources(ctx: NeoContext): GroundingSource[] {
+  return groundingSources(ctx).filter((s) => s.available);
 }
 
 /* ── Questions about one invoice ──────────────────────────────────────── */
@@ -303,6 +440,12 @@ export function answerQuestion(
   const q = question.toLowerCase();
   const { invoices, config, memory, members, documents } = ctx;
 
+  /**
+   * A source the user has left switched on. No selection at all means everything
+   * they can reach, which is what the workflow panel passes.
+   */
+  const on = (id: SourceId) => !ctx.selectedSources || ctx.selectedSources.includes(id);
+
   // A question asked from inside an invoice is about that invoice first.
   if (focus) {
     const scoped = answerAboutInvoice(q, focus, ctx);
@@ -320,6 +463,48 @@ export function answerQuestion(
       q,
     );
 
+  /**
+   * A source switched off is not the same as a question with no answer. Saying
+   * which source would have answered it is the difference between a dead end
+   * and a setting the user can change.
+   */
+  /**
+   * The document corpus, as the source picker splits it: what a person attached
+   * by hand, and what a workflow ingested. Switching one off takes its documents
+   * out of retrieval rather than merely hiding a label.
+   */
+  const readable = [
+    ...(on('uploads') ? documents.filter((d) => d.origin === 'Upload') : []),
+    ...(on('workflow:agenticSearch') ? documents.filter((d) => d.origin !== 'Upload') : []),
+  ];
+  const excluded = documents.filter((d) => !readable.includes(d));
+
+  /** Which switched-off source holds a document, for saying so by name. */
+  const sourceOf = (doc: IndexedDocument) =>
+    doc.origin === 'Upload' ? 'your uploads' : 'Agentic Search';
+
+  if (scope === 'workspace' && needsDocuments && readable.length === 0 && documents.length > 0) {
+    const off = [
+      !on('uploads') ? 'your uploads' : null,
+      !on('workflow:agenticSearch') ? 'Agentic Search' : null,
+    ].filter(Boolean);
+    return {
+      text: `That would come from your documents, and ${off.join(' and ')} ${off.length === 1 ? 'is' : 'are'} switched off as a source. Turn ${off.length === 1 ? 'it' : 'them'} back on and ask again.`,
+      sourceOff: true,
+    };
+  }
+
+  const asksInvoices =
+    /invoice|vendor|posted|duplicate|match|queue|spend|total|variance|reject|export|needs? me|action|approval|cycle|touch/.test(
+      q,
+    );
+  if (scope === 'workspace' && asksInvoices && !on('workflow:invoiceProcessing')) {
+    return {
+      text: 'That would come from Invoice Processing, and you have that workflow switched off as a source. Turn it back on and ask again.',
+      sourceOff: true,
+    };
+  }
+
   if (scope === 'workflow' && needsDocuments) {
     return {
       text: "That one needs your documents or a connected system, and from here I only read Invoice Processing: this invoice, its purchase order and receipt, the checks that ran, and how this workflow is configured.",
@@ -330,24 +515,51 @@ export function answerQuestion(
   // Documents, connected systems and other workflows are the page's reach, not
   // the panel's. The panel stays inside Invoice Processing on purpose.
   if (scope === 'workspace') {
-    const fromDocuments = answerFromDocuments(q, documents);
+    const fromDocuments = answerFromDocuments(q, readable);
     if (fromDocuments) return fromDocuments;
 
+    /**
+     * A document that would have answered this, in a source the user switched
+     * off. Falling through to a vendor lookup here would answer a question
+     * nobody asked; naming the source is the useful thing to say.
+     */
+    if (excluded.length > 0) {
+      const wouldHave = answerFromDocuments(q, excluded);
+      if (wouldHave) {
+        const names = [
+          ...new Set(
+            excluded
+              .filter((d) => d.passages.some((pg) => pg.topics.some((t) => q.includes(t))))
+              .map(sourceOf),
+          ),
+        ];
+        return {
+          text: `A document could answer that, but it sits in ${
+            names.join(' and ') || 'a source you switched off'
+          }. Switch that source back on and ask again.`,
+          sourceOff: true,
+        };
+      }
+    }
+
     if (/document|contract|agreement|policy|handbook|indexed|upload|page/.test(q)) {
-      if (documents.length === 0) {
+      if (readable.length === 0) {
         return {
           text: 'Nothing is indexed yet. Upload a document and it becomes answerable right away, however long it is.',
           ungrounded: true,
         };
       }
-      const totalPages = documents.reduce((sum, d) => sum + d.pages, 0);
+      const totalPages = readable.reduce((sum, d) => sum + d.pages, 0);
       return {
-        text: `${documents.length} documents are indexed, ${totalPages.toLocaleString('en-US')} pages in total:\n\n${documents
-          .map((d) => `• ${d.name} — ${d.pages} pages, ${d.kind.toLowerCase()}, indexed ${d.indexedAt}`)
+        text: `${readable.length} documents are indexed, ${totalPages.toLocaleString('en-US')} pages in total:\n\n${readable
+          .map(
+            (d) =>
+              `• ${d.name} — ${d.pages} page${d.pages === 1 ? '' : 's'}, ${d.kind.toLowerCase()}, indexed ${formatDate(d.indexedAt)}${d.contentRead === false ? ', contents not read' : ''}`,
+          )
           .join('\n')}\n\nAsk about anything in them and I will answer with the page it came from.`,
-        citations: documents.map((d) => ({
-          label: d.name.replace(/\.pdf$/, ''),
-          detail: `${d.pages} pages · ${d.origin}`,
+        citations: readable.map((d) => ({
+          label: d.name.replace(/\.(pdf|md|txt|csv|json)$/i, ''),
+          detail: `${d.pages} page${d.pages === 1 ? '' : 's'} · ${d.origin}`,
         })),
       };
     }

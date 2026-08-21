@@ -17,7 +17,9 @@ import {
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
+  CaretDownIcon,
   CheckCircleIcon,
+  CheckIcon,
   DatabaseIcon,
   FilePdfIcon,
   PaperPlaneRightIcon,
@@ -29,7 +31,7 @@ import {
 import { useStore } from '../store';
 import { StatusChip } from '../components/common';
 import { ShellBar } from '../components/shell';
-import { answerQuestion, groundingSources, suggestedQuestions } from '../neo';
+import { answerQuestion, availableSources, suggestedQuestions } from '../neo';
 import { money } from '../engine';
 import { formatRelative } from '../clock';
 import type { ChatTurn } from '../types';
@@ -280,10 +282,16 @@ function ChatTurnView({ turn }: { turn: ChatTurn }) {
       <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
         {turn.text}
       </Typography>
-      {turn.ungrounded && (
-        <Alert severity="info" floating title="No grounded source">
-          Attach a document and it becomes answerable right away.
+      {turn.sourceOff ? (
+        <Alert severity="info" floating title="A source is switched off">
+          Open the source picker beside the composer and switch it back on.
         </Alert>
+      ) : (
+        turn.ungrounded && (
+          <Alert severity="info" floating title="No grounded source">
+            Attach a document and it becomes answerable right away.
+          </Alert>
+        )
       )}
       {turn.citations && turn.citations.length > 0 && (
         <Stack direction="row" sx={{ gap: 0.75, flexWrap: 'wrap' }}>
@@ -307,23 +315,47 @@ function ChatTurnView({ turn }: { turn: ChatTurn }) {
 /**
  * The paperclip. Attaching a document is what indexing is, so the documents Neo
  * already holds live behind the same control rather than in a panel of their own.
+ *
+ * The picker is the real one: files come off disk, keep their names and sizes,
+ * and survive a reload. Where the browser can read a file's text it is chunked
+ * into pages and genuinely retrieved against; where it cannot, the document says
+ * so instead of offering quotes it does not have.
  */
 function AttachmentMenu() {
   const store = useStore();
-  const { documents, addDocument, removeDocument } = store;
+  const { documents, addDocuments, addSampleDocument, removeDocument } = store;
   const [anchor, setAnchor] = React.useState<HTMLElement | null>(null);
+  const [unread, setUnread] = React.useState<string[]>([]);
+  const [busy, setBusy] = React.useState(false);
+  const fileInput = React.useRef<HTMLInputElement | null>(null);
   const totalPages = documents.reduce((sum, d) => sum + d.pages, 0);
-  const sources = groundingSources({
-    invoices: store.invoices,
-    memory: store.memory,
-    config: store.config,
-    members: store.members,
-    documents: store.documents,
-    connections: store.connections,
-  });
+  const uploads = documents.filter((d) => d.origin === 'Upload');
+
+  const take = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setBusy(true);
+    const result = await addDocuments(Array.from(files));
+    setUnread(result.unread);
+    setBusy(false);
+  };
 
   return (
     <>
+      {/* Off-screen rather than hidden, so the click that opens it is the user's
+          own and the OS picker is allowed to appear. */}
+      <Box
+        component="input"
+        ref={fileInput}
+        type="file"
+        multiple
+        onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+          void take(event.target.files);
+          // Cleared so picking the same file twice fires change both times.
+          event.target.value = '';
+        }}
+        sx={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
+      />
+
       <Tooltip title="Attach a document">
         <IconButton
           variant="secondary"
@@ -346,13 +378,24 @@ function AttachmentMenu() {
       >
         <MenuItem
           variant="action"
+          disabled={busy}
           onClick={() => {
-            addDocument();
+            setUnread([]);
+            fileInput.current?.click();
             setAnchor(null);
           }}
         >
           <UploadSimpleIcon size={16} />
-          Attach a document
+          {busy ? 'Indexing…' : 'Attach a document'}
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            addSampleDocument();
+            setAnchor(null);
+          }}
+        >
+          <FilePdfIcon size={16} />
+          Add a long sample document
         </MenuItem>
 
         <Divider />
@@ -365,6 +408,7 @@ function AttachmentMenu() {
           <>
             <MenuItem variant="secondary" disabled>
               {documents.length} attached · {totalPages.toLocaleString('en-US')} pages
+              {uploads.length > 0 && ` · ${uploads.length} yours, kept across reloads`}
             </MenuItem>
             {documents.map((doc) => (
               <MenuItem key={doc.id} sx={{ alignItems: 'flex-start' }}>
@@ -375,6 +419,8 @@ function AttachmentMenu() {
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
                     {doc.pages} pages · {formatRelative(doc.indexedAt)}
+                    {doc.isSample && ' · sample'}
+                    {doc.contentRead === false && ' · held, contents not read'}
                   </Typography>
                 </Stack>
                 <Tooltip title="Remove">
@@ -396,25 +442,125 @@ function AttachmentMenu() {
           </>
         )}
 
+        {unread.length > 0 && (
+          <>
+            <Divider />
+            <MenuItem variant="secondary" disabled sx={{ whiteSpace: 'normal' }}>
+              <Stack sx={{ gap: 0.25 }}>
+                <Typography variant="caption" color="text.secondary">
+                  Held but not read: {unread.join(', ')}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  This prototype reads text files. A PDF is kept and counted, but nothing is
+                  quoted from it.
+                </Typography>
+              </Stack>
+            </MenuItem>
+          </>
+        )}
+      </Menu>
+    </>
+  );
+}
+
+/* ── Sources ──────────────────────────────────────────────────────────── */
+
+/**
+ * Which sources a question may draw on.
+ *
+ * Only the workflows this person holds a role in appear: reading across
+ * workflows is what this surface is for, but not across ones they are not part
+ * of. Switching one off is honoured in the answer — Neo names the source it
+ * would have used rather than pretending the question has no answer.
+ */
+function SourcePicker() {
+  const store = useStore();
+  const { selectedSources, setSourceSelected } = store;
+  const [anchor, setAnchor] = React.useState<HTMLElement | null>(null);
+
+  const sources = availableSources({
+    invoices: store.invoices,
+    memory: store.memory,
+    config: store.config,
+    members: store.members,
+    documents: store.documents,
+    connections: store.connections,
+    viewer: store.viewer,
+  });
+  const isOn = (id: (typeof sources)[number]['id']) =>
+    selectedSources === null || selectedSources.includes(id);
+  const onCount = sources.filter((s) => isOn(s.id)).length;
+
+  const groups = ['Workflows', 'Your uploads', 'Connected systems'] as const;
+
+  return (
+    <>
+      <Tooltip title="Choose what Neo may read">
+        <Button
+          variant="secondary"
+          appearance="outline"
+          size="sm"
+          startIcon={<DatabaseIcon size={16} />}
+          endIcon={<CaretDownIcon size={14} />}
+          onClick={(event) => setAnchor(event.currentTarget)}
+          sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
+        >
+          {onCount === sources.length ? 'All sources' : `${onCount} of ${sources.length} sources`}
+        </Button>
+      </Tooltip>
+
+      <Menu
+        anchorEl={anchor}
+        open={Boolean(anchor)}
+        onClose={() => setAnchor(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        sx={{ '& .MuiMenu-paper': { minWidth: 380, maxWidth: 460 } }}
+      >
+        {groups.map((group) => {
+          const inGroup = sources.filter((s) => s.group === group);
+          if (inGroup.length === 0) return null;
+          return (
+            <React.Fragment key={group}>
+              <MenuItem variant="secondary" disabled>
+                {group}
+              </MenuItem>
+              {inGroup.map((source) => (
+                <MenuItem
+                  key={source.id}
+                  // A checkable menu item, rather than a checkbox nested inside
+                  // one: Atoms' Checkbox omits inputProps, so it could not be
+                  // named, and a focusable control inside a menuitem is its own
+                  // problem. The row is the control.
+                  role="menuitemcheckbox"
+                  aria-checked={isOn(source.id)}
+                  onClick={() => setSourceSelected(source.id, !isOn(source.id))}
+                  sx={{ alignItems: 'flex-start' }}
+                >
+                  <Box sx={{ width: 16, flexShrink: 0, pt: 0.25 }} aria-hidden>
+                    {isOn(source.id) && <CheckIcon size={16} />}
+                  </Box>
+                  <Stack sx={{ flex: 1, minWidth: 0, gap: 0 }}>
+                    <Typography variant="body2">{source.label}</Typography>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ whiteSpace: 'normal' }}
+                    >
+                      {source.detail}
+                    </Typography>
+                  </Stack>
+                </MenuItem>
+              ))}
+            </React.Fragment>
+          );
+        })}
         <Divider />
         <MenuItem variant="secondary" disabled sx={{ whiteSpace: 'normal' }}>
-          <Stack sx={{ gap: 0.5 }}>
-            <Typography variant="caption" color="text.secondary">
-              Neo can also read
-            </Typography>
-            <Stack direction="row" sx={{ gap: 0.5, flexWrap: 'wrap' }}>
-              {sources
-                .filter((s) => s.label !== 'Indexed documents')
-                .map((source) => (
-                  <Chip
-                    key={source.label}
-                    size="sm"
-                    variant={source.connected ? 'success' : 'secondary'}
-                    label={source.label}
-                  />
-                ))}
-            </Stack>
-          </Stack>
+          <Typography variant="caption" color="text.secondary">
+            A workflow you hold no role in is not listed. Ask your workspace owner for access and
+            it appears here.
+          </Typography>
         </MenuItem>
       </Menu>
     </>
@@ -461,6 +607,8 @@ export function AskNeoScreen() {
           members: store.members,
           documents: store.documents,
           connections: store.connections,
+          viewer: store.viewer,
+          selectedSources: store.selectedSources ?? undefined,
         },
         { scope: 'workspace' },
       );
@@ -473,11 +621,22 @@ export function AskNeoScreen() {
           text: result.text,
           citations: result.citations,
           ungrounded: result.ungrounded,
+          sourceOff: result.sourceOff,
         },
       ]);
       setDraft('');
     },
-    [invoices, store.memory, store.config, store.members, store.documents, store.connections, pushChat],
+    [
+      invoices,
+      store.memory,
+      store.config,
+      store.members,
+      store.documents,
+      store.connections,
+      store.viewer,
+      store.selectedSources,
+      pushChat,
+    ],
   );
 
   React.useEffect(() => {
@@ -559,6 +718,7 @@ export function AskNeoScreen() {
 
             <Stack direction="row" sx={{ gap: 1, alignItems: 'flex-end' }}>
               <AttachmentMenu />
+              <SourcePicker />
               <TextField
                 aria-label="Ask Neo a question"
                 placeholder="Ask about your invoices, contracts, vendors or team…"
