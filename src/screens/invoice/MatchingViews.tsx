@@ -22,8 +22,6 @@ import {
   WarningCircleIcon,
   XCircleIcon,
 } from '@neofloai/atoms/icons';
-import { VAT_CODES, WHT_CODES } from '../../data';
-import { CodePicker } from '../../components/CodePicker';
 import { money, num } from '../../engine';
 import { useStore } from '../../store';
 import type { Invoice, LineMatchState } from '../../types';
@@ -374,102 +372,12 @@ export function LineItemComparison({ invoice }: { invoice: Invoice }) {
   );
 }
 
-/* ── Coding: the tax treatment per line ──────────────────────────────── */
-
-/**
- * Tax codes per line, on the matching stage as well as at posting.
- *
- * Coding is worth doing while the lines are in front of you rather than only at
- * the end, and it is the same values either way. GL is absent on purpose: the
- * ERP derives that from the purchase order and reports it back on a dry run.
- */
-export function LineCoding({ invoice }: { invoice: Invoice }) {
-  const { setLineCode } = useStore();
-  const readOnly = ['Posted', 'Exported', 'Rejected'].includes(invoice.status);
-  const uncoded = invoice.lines.filter((l) => l.vat === '' || l.wht === '').length;
-
-  return (
-    <Stack sx={{ flex: 1, minHeight: 0 }}>
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-        <TableContainer>
-          <Table size="sm">
-            <TableHead>
-              <TableRow>
-                <TableCell sx={{ fontFamily: 'mono' }}>Item No.</TableCell>
-                <TableCell sx={{ width: '100%' }}>Description</TableCell>
-                <TableCell align="right">Line Total</TableCell>
-                <TableCell sx={{ minWidth: 175 }}>VAT/GST Code</TableCell>
-                <TableCell sx={{ minWidth: 155 }}>WHT Code</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {invoice.lines.map((l) => (
-                <TableRow key={l.id}>
-                  <TableCell sx={{ fontFamily: 'mono' }}>{l.itemNo}</TableCell>
-                  <TableCell>{l.description}</TableCell>
-                  <TableCell align="right">{money(l.invoiceLineTotal, invoice.currency)}</TableCell>
-                  <TableCell padding="none" sx={{ pr: 1 }}>
-                    <CodePicker
-                      label="VAT/GST code"
-                      rowLabel={l.description}
-                      value={l.vat}
-                      options={VAT_CODES}
-                      disabled={readOnly}
-                      onPick={(value) => setLineCode(invoice.id, l.id, 'vat', value)}
-                      minWidth={165}
-                    />
-                  </TableCell>
-                  <TableCell padding="none" sx={{ pr: 2 }}>
-                    <CodePicker
-                      label="WHT code"
-                      rowLabel={l.description}
-                      value={l.wht}
-                      options={WHT_CODES}
-                      disabled={readOnly}
-                      onPick={(value) => setLineCode(invoice.id, l.id, 'wht', value)}
-                      minWidth={145}
-                    />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Box>
-
-      <Stack
-        direction="row"
-        sx={{
-          px: 3,
-          py: 1.5,
-          gap: 2,
-          alignItems: 'center',
-          borderTop: '1px solid',
-          borderColor: 'divider',
-          flexShrink: 0,
-        }}
-      >
-        <Chip
-          size="sm"
-          variant={uncoded === 0 ? 'success' : 'warning'}
-          label={uncoded === 0 ? 'All lines coded' : `${uncoded} still to code`}
-        />
-        <Typography variant="body2" color="text.secondary">
-          Tax codes come from Zoho where it is connected, otherwise from your organization's country
-          defaults. The GL account is derived by the ERP and comes back on a simulation.
-        </Typography>
-      </Stack>
-    </Stack>
-  );
-}
-
 /** The matching stage's views. */
 export function MatchingViews({ invoice }: { invoice: Invoice }) {
-  const [tab, setTab] = React.useState<'details' | 'lines' | 'coding'>('details');
+  const [tab, setTab] = React.useState<'details' | 'lines'>('details');
   const differing = invoice.invoiceFields.filter(
     (f) => (f.poValue ?? f.value) !== f.value,
   ).length;
-  const uncoded = invoice.lines.filter((l) => l.vat === '' || l.wht === '').length;
 
   return (
     <Stack sx={{ flex: 1, minHeight: 0 }}>
@@ -477,7 +385,6 @@ export function MatchingViews({ invoice }: { invoice: Invoice }) {
         <Tabs value={tab} onChange={(_, next) => setTab(next)} aria-label="Matching views">
           <Tab label="Invoice details" value="details" count={differing || undefined} />
           <Tab label="Line items" value="lines" count={invoice.lines.length} />
-          <Tab label="Coding" value="coding" count={uncoded || undefined} />
         </Tabs>
       </Box>
       {tab === 'details' && (
@@ -486,7 +393,6 @@ export function MatchingViews({ invoice }: { invoice: Invoice }) {
         </Box>
       )}
       {tab === 'lines' && <LineItemComparison invoice={invoice} />}
-      {tab === 'coding' && <LineCoding invoice={invoice} />}
     </Stack>
   );
 }
