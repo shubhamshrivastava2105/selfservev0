@@ -82,17 +82,6 @@ export interface Profile {
   onboarded: boolean;
 }
 
-export interface SessionProgress {
-  ingested: boolean;
-  /** A sample run and an upload of your own are different steps. */
-  sampleRun: boolean;
-  uploaded: boolean;
-  reviewed: boolean;
-  completed: boolean;
-  invited: boolean;
-  checklistDismissed: boolean;
-}
-
 interface Store {
   screen: Screen;
   goTo: (screen: Screen) => void;
@@ -185,8 +174,6 @@ interface Store {
   landingMode: 'first' | 'return';
 
   activity: AuditEntry[];
-  progress: SessionProgress;
-  dismissChecklist: () => void;
 
   /* Invoice actions */
   editField: (id: string, scope: FieldScope, key: string, value: string) => void;
@@ -310,15 +297,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [landingMode, setLandingMode] = React.useState<'first' | 'return'>('first');
   const [sampleBatch, setSampleBatch] = React.useState(0);
   const [uploadBatch, setUploadBatch] = React.useState(0);
-  const [progress, setProgress] = React.useState<SessionProgress>({
-    ingested: false,
-    sampleRun: false,
-    uploaded: false,
-    reviewed: false,
-    completed: false,
-    invited: false,
-    checklistDismissed: false,
-  });
   const [activity, setActivity] = React.useState<AuditEntry[]>([]);
 
   const actor = profile.firstName
@@ -610,7 +588,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           ),
         };
       });
-      setProgress((p) => ({ ...p, reviewed: true }));
     },
     [patch, actor],
   );
@@ -641,7 +618,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           return { ...next, status: deriveStatus(next, config) };
         });
       });
-      setProgress((p) => ({ ...p, reviewed: true }));
     },
     [config, actor],
   );
@@ -702,7 +678,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         audit: appendAudit(invoice, 'Rejected', reason),
       }));
       log('Invoice rejected', reason);
-      setProgress((p) => ({ ...p, completed: true }));
     },
     [patch, actor, log],
   );
@@ -719,7 +694,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         audit: appendAudit(invoice, 'Posted to Zoho Books', `${reference}. Document attached to the bill.`),
       }));
       log('Invoice posted', reference);
-      setProgress((p) => ({ ...p, completed: true }));
     },
     [patch, actor, log],
   );
@@ -778,7 +752,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         }),
       );
       log('CSV downloaded', `${ids.length} invoice${ids.length === 1 ? '' : 's'}`);
-      setProgress((p) => ({ ...p, completed: true }));
     },
     [actor, config, log],
   );
@@ -916,7 +889,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           return { ...pattern, streak, lastSeen: now() };
         }),
       );
-      setProgress((p) => ({ ...p, reviewed: true }));
     },
     [patch, config.memoryThreshold, actor, log],
   );
@@ -984,7 +956,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       ...previous,
     ]);
     log('Sample set run', 'Three invoices: a clean match, a line variance, and a duplicate of the first');
-    setProgress((p) => ({ ...p, ingested: true, sampleRun: true }));
   }, [sampleBatch, log]);
 
   const uploadInvoice = React.useCallback<Store['uploadInvoice']>(() => {
@@ -993,7 +964,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const built = buildUpload(batch);
     setInvoices((previous) => [built, ...previous]);
     log('Invoice uploaded', `${built.number} with its PO and GRN`);
-    setProgress((p) => ({ ...p, ingested: true, uploaded: true }));
   }, [uploadBatch, log]);
 
   /**
@@ -1053,7 +1023,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           'Documents uploaded',
           `${files.length} files, ${built.length} invoice${built.length === 1 ? '' : 's'} created`,
         );
-        setProgress((p) => ({ ...p, ingested: true, uploaded: true }));
         // Land on the first one, since that is what they came to do.
         setOpenInvoiceId(built[0].id);
         setLastOpenedInvoiceId(built[0].id);
@@ -1090,7 +1059,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         ];
       });
       log('Member invited', `${email} · Invoice Processing: ${invoiceProcessing}`);
-      setProgress((p) => ({ ...p, invited: true }));
     },
     [log],
   );
@@ -1196,10 +1164,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setScreen('ask-neo');
   }, []);
   const clearHandoff = React.useCallback(() => setHandoffQuestion(null), []);
-  const dismissChecklist = React.useCallback(
-    () => setProgress((p) => ({ ...p, checklistDismissed: true })),
-    [],
-  );
 
   /* ── Demo scenarios ─────────────────────────────────────────────────── */
 
@@ -1247,15 +1211,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setSampleBatch(0);
       setUploadBatch(0);
       setActivity([]);
-      setProgress({
-        ingested: false,
-        sampleRun: false,
-        uploaded: false,
-        reviewed: false,
-        completed: false,
-        invited: false,
-        checklistDismissed: false,
-      });
       setVisitedAskNeo(false);
     };
 
@@ -1406,7 +1361,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         const offline = { ...DEFAULT_CONNECTIONS, zohoBooks: false, zohoInventory: false };
         setConnections(offline);
         enterApp();
-        setProgress((p) => ({ ...p, ingested: true, uploaded: true }));
         const alone = buildFromUpload({
           invoiceFile: 'INV-55501.pdf',
           attachments: [],
@@ -1444,14 +1398,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       case 'matching-duplicate':
         enterApp();
         setSampleBatch(1);
-        setProgress((p) => ({ ...p, ingested: true, sampleRun: true }));
         openFrom(withSamples(), 'sample-duplicate');
         break;
 
       case 'matching-variance':
         enterApp();
         setSampleBatch(1);
-        setProgress((p) => ({ ...p, ingested: true, sampleRun: true }));
         openFrom(withSamples(), 'sample-variance');
         break;
 
@@ -1467,7 +1419,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       case 'posting-sample-blocked': {
         enterApp();
         setSampleBatch(1);
-        setProgress((p) => ({ ...p, ingested: true }));
         const list = withSamples().map((invoice) =>
           invoice.id === 'sample-clean'
             ? { ...invoice, stage: 'posting' as const, status: 'ERP posting' as const }
@@ -1484,7 +1435,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
       case 'memory-about-to-form': {
         enterApp();
-        setProgress((p) => ({ ...p, ingested: true, reviewed: true }));
         // Coding is on the posting stage now, so that is where a memory forms.
         const list = withGrnSupplied().map((invoice) =>
           invoice.id === 'inv-44320'
@@ -1515,6 +1465,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         enterApp();
         setInvoices([]);
         setSources([]);
+        // Nothing has happened here yet, so this is a first visit by
+        // definition. visitedAskNeo has to go too, or navigating to Ask Neo
+        // recomputes the landing back to a return.
+        setVisitedAskNeo(false);
+        setLandingMode('first');
+        setMemory([]);
         break;
     }
   }, []);
@@ -1623,8 +1579,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     visitedAskNeo,
     landingMode,
     activity,
-    progress,
-    dismissChecklist,
     editField,
     advanceToMatching,
     advanceToPosting,

@@ -17,7 +17,6 @@ import {
 import {
   ArrowRightIcon,
   CaretDownIcon,
-  CheckCircleIcon,
   CheckIcon,
   DatabaseIcon,
   FilePdfIcon,
@@ -102,35 +101,74 @@ function Tile({
   );
 }
 
-/** What changed since the last visit. */
-function BriefingMessage() {
+/**
+ * What is waiting, and what happened without you.
+ *
+ * A tile worth nothing is left out rather than printed as a zero: three zeros
+ * are both uninformative and the fastest way to make a new workspace feel like
+ * a dashboard someone has to fill in. If there is nothing at all to say, the
+ * briefing does not appear.
+ */
+function BriefingMessage({ firstVisit }: { firstVisit: boolean }) {
   const { invoices, memory, config, goTo, openInvoice } = useStore();
   const needsMe = invoices.filter((i) => i.status === 'Action Required');
   const stp = invoices.filter((i) => i.stpPosted);
   const learned = memory.filter((m) => m.streak >= config.memoryThreshold);
+  // With no invoices there is nothing to brief on, whatever else is seeded —
+  // the start-here card is what shows instead.
+  if (invoices.length === 0) return null;
+
+  // Invoices, but none of them worth a tile. Still say where things stand:
+  // a landing page with nothing on it reads as a broken one.
+  if (needsMe.length === 0 && stp.length === 0 && learned.length === 0) {
+    return (
+      <NeoMessage>
+        <Typography variant="body2">
+          {invoices.length === 1
+            ? 'One invoice is in flight and nothing needs you yet.'
+            : `${invoices.length} invoices are in flight and nothing needs you yet.`}
+        </Typography>
+        <Box>
+          <Button
+            variant="secondary"
+            appearance="outline"
+            size="sm"
+            endIcon={<ArrowRightIcon size={14} />}
+            onClick={() => goTo('queue')}
+          >
+            Open the queue
+          </Button>
+        </Box>
+      </NeoMessage>
+    );
+  }
 
   return (
     <NeoMessage>
-      <Typography variant="body2">Here is what changed while you were away.</Typography>
+      <Typography variant="body2">
+        {firstVisit
+          ? 'Your workspace is already running. Here is where it stands.'
+          : 'Here is what changed while you were away.'}
+      </Typography>
       <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
-        <Tile
-          value={needsMe.length}
-          label={needsMe.length === 1 ? 'invoice needs you' : 'invoices need you'}
-          detail={needsMe.slice(0, 3).map((i) => i.number).join(', ') || undefined}
-          action={
-            needsMe.length > 0 ? (
+        {needsMe.length > 0 && (
+          <Tile
+            value={needsMe.length}
+            label={needsMe.length === 1 ? 'invoice needs you' : 'invoices need you'}
+            detail={needsMe.slice(0, 3).map((i) => i.number).join(', ') || undefined}
+            action={
               <Button size="sm" endIcon={<ArrowRightIcon size={14} />} onClick={() => goTo('queue')}>
                 Open the queue
               </Button>
-            ) : undefined
-          }
-        />
-        <Tile
-          value={stp.length}
-          label="posted without needing you"
-          detail={stp.map((i) => i.number).join(', ') || undefined}
-          action={
-            stp.length > 0 ? (
+            }
+          />
+        )}
+        {stp.length > 0 && (
+          <Tile
+            value={stp.length}
+            label="posted without needing you"
+            detail={stp.map((i) => i.number).join(', ') || undefined}
+            action={
               <Button
                 variant="secondary"
                 appearance="outline"
@@ -139,15 +177,60 @@ function BriefingMessage() {
               >
                 Open {stp[0].number}
               </Button>
-            ) : undefined
-          }
-        />
-        <Tile
-          value={learned.length}
-          label={learned.length === 1 ? 'pattern learned' : 'patterns learned'}
-          detail={learned.map((m) => m.field).join(', ') || undefined}
-        />
+            }
+          />
+        )}
+        {learned.length > 0 && (
+          <Tile
+            value={learned.length}
+            label={learned.length === 1 ? 'pattern learned' : 'patterns learned'}
+            detail={learned.map((m) => m.field).join(', ') || undefined}
+          />
+        )}
       </Stack>
+    </NeoMessage>
+  );
+}
+
+/**
+ * The only thing a genuinely empty workspace needs: one way in.
+ *
+ * Everything else is configured already and can be changed later, so there is
+ * nothing to set up and no list to work through — the fastest route to seeing
+ * what this does is one invoice, or the sample set if you have none to hand.
+ */
+function StartHereMessage() {
+  const { invoices, goTo, runSamples } = useStore();
+  if (invoices.length > 0) return null;
+
+  return (
+    <NeoMessage>
+      <Typography variant="body2">
+        Nothing has arrived yet. Send one invoice through and you will see the whole thing work —
+        reading, matching against the purchase order, and posting.
+      </Typography>
+      <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
+        <Button size="sm" endIcon={<ArrowRightIcon size={14} />} onClick={() => goTo('queue')}>
+          Upload an invoice
+        </Button>
+        <Button
+          variant="secondary"
+          appearance="outline"
+          size="sm"
+          onClick={() => {
+            runSamples();
+            // Straight to where they landed. A click whose result is on another
+            // screen reads as a click that did nothing.
+            goTo('queue');
+          }}
+        >
+          Run a sample set instead
+        </Button>
+      </Stack>
+      <Typography variant="caption" color="text.secondary">
+        Matching, tolerances and your ERP connection are already set. Change them in Workflow or
+        Workspace whenever you like.
+      </Typography>
     </NeoMessage>
   );
 }
@@ -210,59 +293,6 @@ function ResumeMessage() {
   );
 }
 
-/** The activation checklist, as something Neo offers rather than a panel. */
-function ChecklistMessage() {
-  const { progress, connections, goTo, dismissChecklist } = useStore();
-
-  const items = [
-    { label: 'Connect Zoho', done: connections.zohoBooks, go: () => goTo('workspace-config') },
-    { label: 'Upload an invoice or run a sample', done: progress.ingested, go: () => goTo('queue') },
-    { label: 'Review extraction and matching', done: progress.reviewed, go: () => goTo('queue') },
-    { label: 'Post or download', done: progress.completed, go: () => goTo('queue') },
-    { label: 'Invite a colleague', done: progress.invited, go: () => goTo('members') },
-  ];
-  const doneCount = items.filter((i) => i.done).length;
-  if (progress.checklistDismissed || doneCount === items.length) return null;
-  const next = items.find((i) => !i.done);
-
-  return (
-    <NeoMessage>
-      <Typography variant="body2">
-        Here is the shortest path to your first posted invoice. {doneCount} of {items.length} done.
-      </Typography>
-      <Stack
-        sx={{ borderRadius: 1, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}
-        divider={<Divider />}
-      >
-        {items.map((item) => (
-          <Stack key={item.label} direction="row" sx={{ gap: 1.5, alignItems: 'center', px: 2, py: 1.25 }}>
-            <Box sx={{ color: item.done ? 'success.main' : 'text.disabled', display: 'flex' }}>
-              <CheckCircleIcon size={18} />
-            </Box>
-            <Typography
-              variant="body2"
-              sx={{ flex: 1, textDecoration: item.done ? 'line-through' : 'none' }}
-              color={item.done ? 'text.secondary' : 'text.primary'}
-            >
-              {item.label}
-            </Typography>
-            {item === next && (
-              <Button variant="secondary" appearance="outline" size="sm" onClick={item.go}>
-                Start
-              </Button>
-            )}
-          </Stack>
-        ))}
-      </Stack>
-      <Box>
-        <Button variant="secondary" appearance="text" size="sm" onClick={dismissChecklist}>
-          Hide this
-        </Button>
-      </Box>
-    </NeoMessage>
-  );
-}
-
 /* ── A conversation turn ──────────────────────────────────────────────── */
 
 function ChatTurnView({ turn }: { turn: ChatTurn }) {
@@ -309,7 +339,6 @@ function ChatTurnView({ turn }: { turn: ChatTurn }) {
     </NeoMessage>
   );
 }
-
 /* ── Attachments ──────────────────────────────────────────────────────── */
 
 /**
@@ -729,17 +758,12 @@ export function AskNeoScreen() {
                   </Typography>
                 </Stack>
 
-                {/* The checklist belongs to a first visit. Coming back, the
-                    briefing and the resume card are what you want — a list of
-                    setup steps above them is the wrong thing leading. */}
-                {firstVisit ? (
-                  <ChecklistMessage />
-                ) : (
-                  <>
-                    <BriefingMessage />
-                    <ResumeMessage />
-                  </>
-                )}
+                {/* Value first, either way. A first visit gets what is already
+                    waiting rather than a list of things to do; an empty
+                    workspace gets one way in rather than five. */}
+                <StartHereMessage />
+                <BriefingMessage firstVisit={firstVisit} />
+                {!firstVisit && <ResumeMessage />}
               </>
             )}
 

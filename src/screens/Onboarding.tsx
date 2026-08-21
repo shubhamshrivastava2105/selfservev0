@@ -377,10 +377,11 @@ export function ProfileScreen() {
       <Stack sx={{ gap: 3 }}>
         <Stack sx={{ gap: 0.5 }}>
           <Typography variant="h4" component="h1">
-            Two questions, {profile.firstName}
+            You're set, {profile.firstName}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            {pathCopy[profile.routePath ?? 'first-of-domain']} Both of these can be changed later.
+            {pathCopy[profile.routePath ?? 'first-of-domain']} These are filled in already — change
+            them now if they are wrong, or later in Workspace.
           </Typography>
         </Stack>
 
@@ -391,7 +392,7 @@ export function ProfileScreen() {
                 label="Job function"
                 value={jobFunction}
                 onChange={(event) => setJobFunction(String(event.target.value))}
-                helperText="Optional."
+                helperText="Only used to tune what Neo suggests first."
                 fullWidth
               >
                 {JOB_FUNCTIONS.map((option) => (
@@ -406,7 +407,7 @@ export function ProfileScreen() {
                 value={country}
                 onChange={(event) => setCountry(String(event.target.value))}
                 status={touched && !country ? 'error' : undefined}
-                helperText="Required. This sets tax-code defaults for your whole organization, not just for you."
+                helperText="Sets tax-code defaults for the whole organization."
                 fullWidth
               >
                 {COUNTRIES.map((option) => (
