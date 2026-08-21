@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Box, Button, IconButton, Stack, Tooltip, Typography } from '@neofloai/atoms';
+import { ColorModeToggle } from './common';
 import {
   ArrowRightIcon,
   ClockCounterClockwiseIcon,
@@ -74,6 +75,11 @@ export function RecordHeader({
         direction="row"
         sx={{ gap: 1.5, alignItems: 'center', flexShrink: 0, '& .MuiButton-root': { whiteSpace: 'nowrap' } }}
       >
+        {/* A record screen replaces the app bar, so without this the theme
+            switch would vanish on the three stage screens — and a demo left in
+            dark mode could not get back. */}
+        <ColorModeToggle />
+
         <Tooltip title={historyActive ? 'Back to the stage' : 'History'}>
           <IconButton
             variant="secondary"

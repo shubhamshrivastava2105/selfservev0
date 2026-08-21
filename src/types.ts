@@ -84,7 +84,6 @@ export interface ExtractedField {
    * nothing for the user to check (Workflow PRD §4).
    */
   confidence: number | null;
-  acknowledged: boolean;
   mandatory: boolean;
   /** Whether memory is allowed to learn this field (§9 — never per-transaction fields). */
   learnable: boolean;
@@ -337,7 +336,7 @@ export interface MemoryPattern {
   fieldKey: string;
   patternKey: string;
   suggestedValue: string;
-  /** Consecutive identical acknowledgments. At config.memoryThreshold it suggests. */
+  /** Consecutive identical codings. At config.memoryThreshold it suggests. */
   streak: number;
   lastSeen: string;
 }

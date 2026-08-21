@@ -35,7 +35,7 @@ import { useStore } from '../store';
 import { EmptyState, StatusChip } from '../components/common';
 import { ShellBar } from '../components/shell';
 import { UploadDialog } from '../components/UploadDialog';
-import { buildCsv, downloadCsv, money, unacknowledgedFields } from '../engine';
+import { buildCsv, downloadCsv, money, flaggedFields } from '../engine';
 import { formatDate, formatTime } from '../clock';
 import type { Invoice, InvoiceStatus } from '../types';
 
@@ -195,7 +195,7 @@ export function QueueScreen() {
         headerName: 'Status',
         width: 160,
         renderCell: ({ row }: { row: Invoice }) => {
-          const pending = unacknowledgedFields(row, config.confidenceThreshold).length;
+          const pending = flaggedFields(row, config.confidenceThreshold).length;
           return (
             <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>
               <StatusChip status={row.status} />

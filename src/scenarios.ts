@@ -102,7 +102,7 @@ export const SCENARIOS: Scenario[] = [
     id: 'extraction-low-confidence',
     group: 'Extraction',
     label: 'Four fields below threshold',
-    detail: 'INV-77120. Matching will not run until each is acknowledged or corrected.',
+    detail: 'INV-77120. Four fields flagged below the threshold, and the queue says a person should look. Nothing is blocked.',
   },
   {
     id: 'extraction-attachments',

@@ -162,7 +162,7 @@ function ResumeMessage() {
 
   const closed = ['Posted', 'Exported', 'Rejected'].includes(invoice.status);
   const pending = invoice.invoiceFields.filter(
-    (f) => f.confidence !== null && f.confidence < config.confidenceThreshold && !f.acknowledged,
+    (f) => f.confidence !== null && f.confidence < config.confidenceThreshold,
   ).length;
 
   return (
@@ -195,7 +195,7 @@ function ResumeMessage() {
           {!closed && (
             <Typography variant="caption" color="text.secondary">
               {invoice.stage === 'extraction'
-                ? `At extraction, with ${pending} ${pending === 1 ? 'field' : 'fields'} still to confirm.`
+                ? `At extraction, with ${pending} ${pending === 1 ? 'field' : 'fields'} flagged for a look.`
                 : invoice.stage === 'matching'
                   ? 'At matching.'
                   : 'Ready to post or download.'}
@@ -750,7 +750,10 @@ export function AskNeoScreen() {
       </Box>
 
       {/* The composer, where a chat window keeps it. */}
-      <Box sx={{ flexShrink: 0, borderTop: '1px solid', borderColor: 'divider' }}>
+      <Box
+        data-composer-dock
+        sx={{ flexShrink: 0, borderTop: '1px solid', borderColor: 'divider' }}
+      >
         <Box sx={{ maxWidth: COLUMN, mx: 'auto', px: 3, pt: 2, pb: 2 }}>
           <Stack sx={{ gap: 1.5 }}>
             <MisfiledNotice names={misfiled} onDismiss={() => setMisfiled([])} />

@@ -14,7 +14,6 @@ import {
   Menu,
   MenuItem,
   Navbar,
-  NavbarTitle,
   NeofloLogo,
   Radio,
   RadioGroup,
@@ -39,7 +38,6 @@ import {
   TrashIcon,
   UsersThreeIcon,
 } from '@neofloai/atoms/icons';
-import { NAVBAR_META_ICON_PX as META_PX } from '@neofloai/atoms';
 import { VISIBILITY_COPY } from '../data';
 import { useStore } from '../store';
 import { AskNeoPanel } from './AskNeoPanel';
@@ -559,68 +557,3 @@ export function ShellBar({ children }: { children?: React.ReactNode }) {
     </Navbar>
   );
 }
-
-/**
- * The page header for a record screen — a title, the facts that identify it,
- * and the actions that apply to it. Replaces the app bar rather than stacking
- * under it.
- */
-export function RecordBar({
-  title,
-  meta,
-  actions,
-  askNeoInvoiceId,
-}: {
-  title: string;
-  meta: { icon?: React.ReactNode; label: string }[];
-  actions?: React.ReactNode;
-  /** Scopes the Ask Neo panel to the record on screen. */
-  askNeoInvoiceId?: string | null;
-}) {
-  const { collapsed, toggleCollapsed } = React.useContext(ShellContext);
-  const { askNeoOpen } = useStore();
-  return (
-    <Navbar size="md">
-      <IconButton
-        variant="secondary"
-        appearance="text"
-        size="sm"
-        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        onClick={toggleCollapsed}
-      >
-        <SidebarSimpleIcon />
-      </IconButton>
-
-      {/* Truncates under pressure, but never below a floor: a record screen
-          whose header has lost the record is worse than a clipped label. */}
-      <NavbarTitle meta={meta} sx={{ ml: 3, minWidth: 200, overflow: 'hidden' }}>
-        {title}
-      </NavbarTitle>
-
-      <Box sx={{ flex: 1, minWidth: 8 }} />
-
-      <Stack
-        direction="row"
-        sx={{
-          gap: 1.5,
-          alignItems: 'center',
-          flexShrink: 0,
-          '& .MuiButton-root': { whiteSpace: 'nowrap' },
-        }}
-      >
-        {/* Redundant while the panel is already open, and it is the longest
-            label in the bar. */}
-        {!askNeoOpen && (
-          <AskNeoButton
-            invoiceId={askNeoInvoiceId}
-            label={askNeoInvoiceId ? 'Ask about this invoice' : 'Ask Neo'}
-          />
-        )}
-        {actions}
-        <ColorModeToggle />
-      </Stack>
-    </Navbar>
-  );
-}
-
-export const META_ICON_PX = META_PX;

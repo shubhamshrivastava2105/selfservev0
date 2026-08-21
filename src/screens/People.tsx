@@ -524,8 +524,15 @@ export function ReportingScreen() {
               Reporting
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Live, per workflow, rolled up per workspace. {real.length} real invoices,{' '}
-              {invoices.length - real.length} sample records are excluded.
+              Live, per workflow, rolled up per workspace. {real.length} real invoice
+              {real.length === 1 ? '' : 's'}
+              {/* Silent when there are none: "0 sample records are excluded" is
+                  a sentence about nothing. */}
+              {invoices.length > real.length &&
+                `, and ${invoices.length - real.length} sample record${
+                  invoices.length - real.length === 1 ? '' : 's'
+                } left out`}
+              .
             </Typography>
           </Stack>
 

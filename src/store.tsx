@@ -190,8 +190,6 @@ interface Store {
 
   /* Invoice actions */
   editField: (id: string, scope: FieldScope, key: string, value: string) => void;
-  acknowledgeField: (id: string, scope: FieldScope, key: string) => void;
-  acknowledgeAll: (id: string) => void;
   advanceToMatching: (id: string) => void;
   advanceToPosting: (id: string) => void;
   rerunMatching: (id: string) => void;
@@ -534,7 +532,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
                 // A corrected value is verified by a person, so it stops
                 // being a low-confidence read.
                 confidence: f.confidence === null ? null : 100,
-                acknowledged: true,
               }
             : f,
         );
@@ -550,53 +547,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setProgress((p) => ({ ...p, reviewed: true }));
     },
     [patch, actor],
-  );
-
-  const acknowledgeField = React.useCallback<Store['acknowledgeField']>(
-    (id, scope, key) => {
-      patch(id, (invoice) => {
-        const fields = fieldsFor(invoice, scope);
-        const target = fields.find((f) => f.key === key);
-        if (!target) return invoice;
-        const next = fields.map((f) => (f.key === key ? { ...f, acknowledged: true } : f));
-        return {
-          ...withFields(invoice, scope, next),
-          audit: appendAudit(
-            invoice,
-            'Field acknowledged',
-            `${target.label} accepted as read at ${target.confidence}% confidence`,
-          ),
-        };
-      });
-      setProgress((p) => ({ ...p, reviewed: true }));
-    },
-    [patch, actor],
-  );
-
-  const acknowledgeAll = React.useCallback<Store['acknowledgeAll']>(
-    (id) => {
-      patch(id, (invoice) => {
-        const ack = (fields: Invoice['invoiceFields']) =>
-          fields.map((f) =>
-            f.confidence !== null && f.confidence < config.confidenceThreshold && !f.acknowledged
-              ? { ...f, acknowledged: true }
-              : f,
-          );
-        const count = [...invoice.invoiceFields, ...invoice.poFields, ...invoice.grnFields].filter(
-          (f) => f.confidence !== null && f.confidence < config.confidenceThreshold && !f.acknowledged,
-        ).length;
-        if (count === 0) return invoice;
-        return {
-          ...invoice,
-          invoiceFields: ack(invoice.invoiceFields),
-          poFields: ack(invoice.poFields),
-          grnFields: ack(invoice.grnFields),
-          audit: appendAudit(invoice, 'Fields acknowledged', `${count} low-confidence fields accepted as read`),
-        };
-      });
-      setProgress((p) => ({ ...p, reviewed: true }));
-    },
-    [patch, config.confidenceThreshold, actor],
   );
 
   /* ── Stages ─────────────────────────────────────────────────────────── */
@@ -776,10 +726,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         poSource: connections.zohoBooks ? 'zoho' : invoice.poSource,
         poFields: connections.zohoBooks
           ? [
-              { key: 'poNumber', label: 'PO number', value: poNumber, confidence: null, acknowledged: true, mandatory: true, learnable: false },
-              { key: 'poVendor', label: 'Vendor', value: invoice.vendor, confidence: null, acknowledged: true, mandatory: true, learnable: false },
-              { key: 'poCurrency', label: 'Currency', value: invoice.currency, confidence: null, acknowledged: true, mandatory: true, learnable: false },
-              { key: 'poTotal', label: 'PO total', value: invoice.amount.toFixed(2), confidence: null, acknowledged: true, mandatory: true, learnable: false },
+              { key: 'poNumber', label: 'PO number', value: poNumber, confidence: null, mandatory: true, learnable: false },
+              { key: 'poVendor', label: 'Vendor', value: invoice.vendor, confidence: null, mandatory: true, learnable: false },
+              { key: 'poCurrency', label: 'Currency', value: invoice.currency, confidence: null, mandatory: true, learnable: false },
+              { key: 'poTotal', label: 'PO total', value: invoice.amount.toFixed(2), confidence: null, mandatory: true, learnable: false },
             ]
           : invoice.poFields,
         audit: appendAudit(
@@ -804,9 +754,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             ...invoice,
             grnSource: 'uploaded',
             grnFields: [
-              { key: 'grnNumber', label: 'GRN number', value: `GRN-US-${invoice.number.replace(/\D/g, '').slice(-5)}`, confidence: 93, acknowledged: false, mandatory: true, learnable: false },
-              { key: 'grnPoRef', label: 'PO reference', value: invoice.poNumber ?? '—', confidence: 96, acknowledged: false, mandatory: true, learnable: false },
-              { key: 'grnDate', label: 'Receipt date', value: formatDate(at(2)), confidence: 91, acknowledged: false, mandatory: true, learnable: false },
+              { key: 'grnNumber', label: 'GRN number', value: `GRN-US-${invoice.number.replace(/\D/g, '').slice(-5)}`, confidence: 93, mandatory: true, learnable: false },
+              { key: 'grnPoRef', label: 'PO reference', value: invoice.poNumber ?? '—', confidence: 96, mandatory: true, learnable: false },
+              { key: 'grnDate', label: 'Receipt date', value: formatDate(at(2)), confidence: 91, mandatory: true, learnable: false },
             ],
             // The receipt matches what was ordered.
             lines: invoice.lines.map((l) => ({ ...l, grnQty: l.poQty })),
@@ -817,10 +767,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           ...invoice,
           poSource: 'uploaded',
           poFields: [
-            { key: 'poNumber', label: 'PO number', value: invoice.poNumber ?? 'PO-US-00000', confidence: 94, acknowledged: false, mandatory: true, learnable: false },
-            { key: 'poVendor', label: 'Vendor', value: invoice.vendor, confidence: 92, acknowledged: false, mandatory: true, learnable: false },
-            { key: 'poCurrency', label: 'Currency', value: invoice.currency, confidence: 97, acknowledged: false, mandatory: true, learnable: false },
-            { key: 'poTotal', label: 'PO total', value: invoice.amount.toFixed(2), confidence: 88, acknowledged: false, mandatory: true, learnable: false },
+            { key: 'poNumber', label: 'PO number', value: invoice.poNumber ?? 'PO-US-00000', confidence: 94, mandatory: true, learnable: false },
+            { key: 'poVendor', label: 'Vendor', value: invoice.vendor, confidence: 92, mandatory: true, learnable: false },
+            { key: 'poCurrency', label: 'Currency', value: invoice.currency, confidence: 97, mandatory: true, learnable: false },
+            { key: 'poTotal', label: 'PO total', value: invoice.amount.toFixed(2), confidence: 88, mandatory: true, learnable: false },
           ],
           audit: appendAudit(invoice, 'PO attached', 'Uploaded document, extracted with confidence per field'),
         };
@@ -1118,7 +1068,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   /**
    * These are referenced in consumers' useMemo deps, most importantly the
    * DataGrid's column definitions. A fresh arrow on every render invalidates
-   * those memos and makes the grid re-initialise, which is a visible pause.
+   * those memos and makes the grid re-initialize, which is a visible pause.
    */
   const openInvoice = React.useCallback((id: string) => {
     setOpenInvoiceId(id);
@@ -1278,9 +1228,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           ...invoice,
           grnSource: 'uploaded' as const,
           grnFields: [
-            { key: 'grnNumber', label: 'GRN number', value: 'GRN-US-88213', confidence: 93, acknowledged: true, mandatory: true, learnable: false },
-            { key: 'grnPoRef', label: 'PO reference', value: 'PO-US-88213', confidence: 96, acknowledged: true, mandatory: true, learnable: false },
-            { key: 'grnDate', label: 'Receipt date', value: formatDate(at(4)), confidence: 91, acknowledged: true, mandatory: true, learnable: false },
+            { key: 'grnNumber', label: 'GRN number', value: 'GRN-US-88213', confidence: 93, mandatory: true, learnable: false },
+            { key: 'grnPoRef', label: 'PO reference', value: 'PO-US-88213', confidence: 96, mandatory: true, learnable: false },
+            { key: 'grnDate', label: 'Receipt date', value: formatDate(at(4)), confidence: 91, mandatory: true, learnable: false },
           ],
           lines: invoice.lines.map((l) => ({ ...l, grnQty: l.poQty })),
         };
@@ -1400,7 +1350,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         });
         const cleared: Invoice = {
           ...alone,
-          invoiceFields: alone.invoiceFields.map((f) => ({ ...f, acknowledged: true })),
+          invoiceFields: alone.invoiceFields.map((f) => ({ ...f })),
           stage: 'matching',
         };
         const list = [cleared, ...INITIAL_INVOICES];
@@ -1610,8 +1560,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     progress,
     dismissChecklist,
     editField,
-    acknowledgeField,
-    acknowledgeAll,
     advanceToMatching,
     advanceToPosting,
     rerunMatching,

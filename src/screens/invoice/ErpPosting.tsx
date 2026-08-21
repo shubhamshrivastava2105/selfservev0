@@ -39,7 +39,7 @@ import type { ErpPayload, Invoice } from '../../types';
 
 /**
  * The payload as it will be written to the ERP: the header, the documents
- * travelling with it, and the lines.
+ * traveling with it, and the lines.
  *
  * Deliberately nothing else. A dry run reports back in a dialog rather than
  * stacking a second table above the form, and the screen keeps its shape once

@@ -88,7 +88,7 @@ export function ExtractedData({
   const [tab, setTab] = React.useState<'metadata' | 'lines'>('metadata');
   const { config } = useStore();
   const pending = invoice.invoiceFields.filter(
-    (f) => f.confidence !== null && f.confidence < config.confidenceThreshold && !f.acknowledged,
+    (f) => f.confidence !== null && f.confidence < config.confidenceThreshold,
   ).length;
 
   return (

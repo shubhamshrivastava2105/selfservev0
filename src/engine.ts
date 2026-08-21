@@ -28,11 +28,6 @@ export function money(amount: number, currency = 'USD'): string {
   }).format(amount);
 }
 
-export function signedMoney(amount: number, currency = 'USD'): string {
-  const sign = amount > 0 ? '+' : amount < 0 ? '−' : '';
-  return sign + money(Math.abs(amount), currency);
-}
-
 export function num(value: number): string {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(value);
 }
@@ -45,17 +40,17 @@ export function stamp(): string {
 /* ── Confidence ───────────────────────────────────────────────────────── */
 
 /**
- * A field needs the user when it was read from a document, scored below the
- * threshold, and has not yet been acknowledged or corrected. A field from Zoho
- * carries no confidence at all and is never in this set.
+ * A field is worth a person's eye when it was read from a document and scored
+ * below the threshold. A field from Zoho carries no confidence at all and is
+ * never in this set — it is ground truth, not a read.
  */
 export function isBelowThreshold(f: ExtractedField, threshold: number): boolean {
   return f.confidence !== null && f.confidence < threshold;
 }
 
-export function unacknowledgedFields(invoice: Invoice, threshold: number): ExtractedField[] {
+export function flaggedFields(invoice: Invoice, threshold: number): ExtractedField[] {
   return [...invoice.invoiceFields, ...invoice.poFields, ...invoice.grnFields].filter(
-    (f) => isBelowThreshold(f, threshold) && !f.acknowledged,
+    (f) => isBelowThreshold(f, threshold),
   );
 }
 
@@ -63,9 +58,10 @@ export function unacknowledgedFields(invoice: Invoice, threshold: number): Extra
  * Extraction is clear once every mandatory field has a value.
  *
  * A low-confidence read is flagged, not blocking: the score is shown on the
- * field and the user corrects it if it is wrong. Requiring an explicit
- * acknowledgement of every flag made people click through them, which taught
- * nothing and slowed the good case down.
+ * field and the user corrects it if it is wrong. Requiring a confirmation on
+ * every flag made people click through them, which taught nothing and slowed
+ * the good case down. The status still says a person should look — a flag and a
+ * gate are different things.
  */
 export function extractionIsClear(invoice: Invoice, config: WorkflowConfig): boolean {
   void config;
@@ -407,7 +403,17 @@ export function deriveStatus(invoice: Invoice, config: WorkflowConfig): InvoiceS
   if (isTerminal(invoice)) return invoice.status;
 
   if (invoice.stage === 'extraction') {
-    return extractionIsClear(invoice, config) ? 'Extraction' : 'Action Required';
+    /**
+     * The status is a label, not the gate. Proceed stays enabled on a
+     * low-confidence read — the user asked for a flag rather than a block — but
+     * a flagged read is exactly what "a person should look at this" means, so
+     * the queue says so. Correcting a field takes it to full confidence, which
+     * is what clears this on its own.
+     */
+    const flagged = [...invoice.invoiceFields, ...invoice.poFields, ...invoice.grnFields].some(
+      (f) => f.confidence !== null && f.confidence < config.confidenceThreshold,
+    );
+    return extractionIsClear(invoice, config) && !flagged ? 'Extraction' : 'Action Required';
   }
   if (invoice.stage === 'matching') {
     if (!invoice.matchResult) return 'Matching';

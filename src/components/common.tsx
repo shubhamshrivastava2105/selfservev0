@@ -1,30 +1,24 @@
 import * as React from 'react';
 import {
   Box,
-  Button,
   Card,
   CardContent,
   Chip,
   IconButton,
   Stack,
-  TextField,
   Tooltip,
   Typography,
   useColorScheme,
 } from '@neofloai/atoms';
 import {
-  CheckIcon,
   DatabaseIcon,
-  EnvelopeSimpleIcon,
   MoonIcon,
   SealCheckIcon,
-  SparkleIcon,
   SunIcon,
-  UploadSimpleIcon,
   WarningIcon,
 } from '@neofloai/atoms/icons';
 import type { ChipVariant } from '@neofloai/atoms';
-import type { ExtractedField, InvoiceStatus, SourceKind } from '../types';
+import type { InvoiceStatus } from '../types';
 
 /* ── Color scheme ────────────────────────────────────────────────────── */
 
@@ -55,7 +49,7 @@ export function ColorModeToggle() {
 /* ── Status ───────────────────────────────────────────────────────────── */
 
 /**
- * A colour per stage, as the product distinguishes them: extraction blue,
+ * A color per stage, as the product distinguishes them: extraction blue,
  * matching purple, posting indigo, attention amber. Blue appears again on
  * Exported, which only ever shows in the Closed tab where extraction cannot.
  */
@@ -71,16 +65,6 @@ const STATUS_VARIANT: Record<InvoiceStatus, ChipVariant> = {
 
 export function StatusChip({ status }: { status: InvoiceStatus }) {
   return <Chip size="sm" variant={STATUS_VARIANT[status]} label={status} />;
-}
-
-const SOURCE_ICON: Record<SourceKind, React.ReactNode> = {
-  Upload: <UploadSimpleIcon size={12} />,
-  Mailbox: <EnvelopeSimpleIcon size={12} />,
-  Sample: <SparkleIcon size={12} />,
-};
-
-export function SourceChip({ kind }: { kind: SourceKind }) {
-  return <Chip size="sm" variant="secondary" icon={SOURCE_ICON[kind] as React.ReactElement} label={kind} />;
 }
 
 /* ── Confidence ───────────────────────────────────────────────────────── */
@@ -130,101 +114,6 @@ export function ConfidenceBadge({
       icon={<WarningIcon size={12} />}
       label={`${confidence}%`}
     />
-  );
-}
-
-/**
- * One extracted value: editable, with its confidence beside it, and an
- * acknowledge action while it sits below the threshold.
- */
-export function ConfidenceFieldRow({
-  field,
-  threshold,
-  onEdit,
-  onAcknowledge,
-  readOnly = false,
-}: {
-  field: ExtractedField;
-  threshold: number;
-  onEdit: (value: string) => void;
-  onAcknowledge: () => void;
-  readOnly?: boolean;
-}) {
-  const [draft, setDraft] = React.useState(field.value);
-  React.useEffect(() => setDraft(field.value), [field.value]);
-
-  const tone = confidenceTone(field.confidence, threshold);
-  const needsUser = (tone === 'amber' || tone === 'red') && !field.acknowledged;
-
-  const commit = () => {
-    if (draft !== field.value) onEdit(draft);
-  };
-
-  return (
-    <Stack
-      direction="row"
-      sx={{
-        gap: 2,
-        alignItems: 'flex-start',
-        px: 2,
-        py: 1.5,
-        borderRadius: 1,
-        backgroundColor: needsUser
-          ? tone === 'red'
-            ? 'error.subtle'
-            : 'warning.subtle'
-          : 'transparent',
-      }}
-    >
-      <Stack sx={{ width: 180, flexShrink: 0, gap: 0.25, pt: 1 }}>
-        <Typography variant="body2" weight="medium">
-          {field.label}
-          {field.mandatory && (
-            <Typography component="span" variant="body2" color="error.main">
-              {' '}
-              *
-            </Typography>
-          )}
-        </Typography>
-        {field.editedFrom !== undefined && (
-          <Typography variant="caption" color="text.secondary">
-            was “{field.editedFrom}”
-          </Typography>
-        )}
-      </Stack>
-
-      <Box sx={{ flex: 1, minWidth: 0 }}>
-        <TextField
-          aria-label={field.label}
-          value={draft}
-          disabled={readOnly}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commit}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') commit();
-          }}
-          status={needsUser ? (tone === 'red' ? 'error' : 'warning') : undefined}
-          helperText={
-            needsUser
-              ? 'Below the confidence threshold. Correct it, or acknowledge it as read.'
-              : undefined
-          }
-          fullWidth
-        />
-      </Box>
-
-      <Stack direction="row" sx={{ gap: 1, alignItems: 'center', pt: 1, flexShrink: 0 }}>
-        <ConfidenceBadge confidence={field.confidence} threshold={threshold} />
-        {needsUser && !readOnly && (
-          <Button variant="secondary" appearance="outline" size="sm" onClick={onAcknowledge}>
-            Acknowledge
-          </Button>
-        )}
-        {field.acknowledged && tone !== 'clear' && tone !== 'ground-truth' && (
-          <Chip size="sm" variant="success" icon={<CheckIcon size={12} />} label="Acknowledged" />
-        )}
-      </Stack>
-    </Stack>
   );
 }
 
@@ -302,23 +191,6 @@ export function EmptyState({
         {description}
       </Typography>
       {action && <Box sx={{ mt: 2 }}>{action}</Box>}
-    </Stack>
-  );
-}
-
-/** A labelled fact, for the read-only panels. */
-export function Fact({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <Stack sx={{ gap: 0.25, minWidth: 0 }}>
-      <Typography variant="caption" color="text.secondary">
-        {label}
-      </Typography>
-      {/* A div, not the variant's default p: callers pass element values
-          (a Stack with a confidence figure beside the number), and a div
-          inside a p is invalid HTML. */}
-      <Typography variant="body2" weight="medium" component="div">
-        {value}
-      </Typography>
     </Stack>
   );
 }

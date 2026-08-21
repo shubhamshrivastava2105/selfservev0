@@ -66,7 +66,7 @@ export function whyItNeedsYou(invoice: Invoice, config: WorkflowConfig): string 
   if (block === 'duplicate') return 'a duplicate of an invoice already processed';
   if (invoice.stage === 'extraction') {
     const pending = [...invoice.invoiceFields, ...invoice.poFields, ...invoice.grnFields].filter(
-      (f) => f.confidence !== null && f.confidence < config.confidenceThreshold && !f.acknowledged,
+      (f) => f.confidence !== null && f.confidence < config.confidenceThreshold,
     ).length;
     return `${pending} field${pending === 1 ? '' : 's'} below the ${config.confidenceThreshold}% confidence threshold`;
   }
@@ -305,7 +305,7 @@ function answerAboutInvoice(q: string, invoice: Invoice, ctx: NeoContext): NeoAn
   if (/variance|difference|match|po|grn|receipt/.test(q)) {
     if (!result) {
       return {
-        text: `Matching has not run on ${invoice.number} yet. It runs once every low-confidence field is acknowledged or corrected.`,
+        text: `Matching has not run on ${invoice.number} yet. It runs when you proceed from extraction.`,
         citations: [cite(invoice)],
       };
     }
@@ -598,7 +598,7 @@ export function answerQuestion(
     const building = memory.filter((m) => m.streak < config.memoryThreshold);
     return {
       text: `${live.length} pattern${live.length === 1 ? ' is' : 's are'} live and offered back as suggestions:\n\n${live
-        .map((m) => `• ${m.field} — ${m.patternKey} → ${m.suggestedValue} (${m.streak} acknowledgments)`)
+        .map((m) => `• ${m.field} — ${m.patternKey} → ${m.suggestedValue} (${m.streak} in a row)`)
         .join('\n')}${
         building.length > 0
           ? `\n\n${building.length} more ${building.length === 1 ? 'is' : 'are'} still building a streak, and will be offered at ${config.memoryThreshold}:\n\n${building
@@ -617,7 +617,7 @@ export function answerQuestion(
 
   if (/tolerance|threshold|match type|3-way|2-way|config|setting|straight/.test(q)) {
     return {
-      text: `This workflow runs a ${config.matchType} match. The confidence threshold is ${config.confidenceThreshold}% on both invoice and reference fields. Total tolerance is ${money(config.totalToleranceAbsolute)} or ${config.totalTolerancePercent}%, line tolerance ${money(config.lineToleranceAbsolute)} or ${config.lineTolerancePercent}%. Straight-through processing is ${config.straightThrough ? 'on' : 'off'}, and memory forms at ${config.memoryThreshold} acknowledgments.\n\nA change to any of these reaches what runs next. It does not re-grade invoices already decided.`,
+      text: `This workflow runs a ${config.matchType} match. The confidence threshold is ${config.confidenceThreshold}% on both invoice and reference fields. Total tolerance is ${money(config.totalToleranceAbsolute)} or ${config.totalTolerancePercent}%, line tolerance ${money(config.lineToleranceAbsolute)} or ${config.lineTolerancePercent}%. Straight-through processing is ${config.straightThrough ? 'on' : 'off'}, and memory forms after ${config.memoryThreshold} identical codings in a row.\n\nA change to any of these reaches what runs next. It does not re-grade invoices already decided.`,
       citations: [{ label: 'Workflow configuration', detail: 'Invoice Processing · this workspace' }],
     };
   }

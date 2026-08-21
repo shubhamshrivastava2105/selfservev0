@@ -34,8 +34,6 @@ export const SIGNED_IN = {
   initials: 'SS',
 };
 
-export const TENANT_NAME = 'Neoflo';
-
 /**
  * Domains that already have a tenant in this prototype. Anyone else is the
  * first from their domain, which is a different flow: there is no organization
@@ -78,9 +76,6 @@ export const LEGAL_ENTITY = 'Neoflo Inc.';
 /** Where the user last visited, for the returning-visit briefing (Journey §2). */
 const NOW_HOUR = NOW.getHours();
 const NOW_MINUTE = NOW.getMinutes();
-
-/** When the user was last here, for the returning-visit briefing. */
-export const LAST_VISIT = at(1, 17, 40);
 
 /* ── Onboarding options ───────────────────────────────────────────────── */
 
@@ -150,15 +145,6 @@ export const VAT_CODES = [
 ];
 
 export const WHT_CODES = ['US-NONE', 'US-1099-NEC', 'US-BACKUP-24'];
-
-export const GL_CODES = [
-  '5010 · Cost of goods sold',
-  '6200 · Office supplies',
-  '6400 · IT and software',
-  '6500 · Repairs and maintenance',
-  '7100 · Freight and delivery',
-  '7400 · Printing and marketing',
-];
 
 /* ── Defaults ─────────────────────────────────────────────────────────── */
 
@@ -255,9 +241,9 @@ export const MEMBERS: Member[] = [
 /* ── Memory ───────────────────────────────────────────────────────────── */
 
 /**
- * Two patterns sit at a streak of 2. The threshold is 3, so the next
- * acknowledgment of either forms a memory in front of you — which is the
- * only way to see §9 happen inside one sitting.
+ * Two patterns sit at a streak of 2. The threshold is 3, so coding either one
+ * the same way once more forms a memory in front of you — the only way to see
+ * §9 happen inside one sitting.
  */
 export const MEMORY_PATTERNS: MemoryPattern[] = [
   {
@@ -323,7 +309,7 @@ function field(
   mandatory = true,
   learnable = false,
 ): ExtractedField {
-  return { key, label, value, confidence, acknowledged: false, mandatory, learnable };
+  return { key, label, value, confidence, mandatory, learnable };
 }
 
 /**
@@ -697,7 +683,7 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     grnSource: 'none',
     lines: [
       line('l1', 'Network switches — 48 port', 4, 4, null, 720.0, '6400 · IT and software'),
-      line('l2', 'Install labour', 8, 8, null, 132.53, '6400 · IT and software'),
+      line('l2', 'Install labor', 8, 8, null, 132.53, '6400 · IT and software'),
     ],
     attachments: [
       { name: 'faktur-pajak-77120.pdf', kind: 'Tax document' },
@@ -960,7 +946,7 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     overrides: [
       {
         rule: 'Line item — quantity',
-        reason: 'Short shipment agreed with the vendor; remaining 4 cartons cancelled on the PO.',
+        reason: 'Short shipment agreed with the vendor; remaining 4 cartons canceled on the PO.',
         at: at(6, 10, 31),
         actor: 'Kaustav Dutta',
       },
@@ -1294,7 +1280,7 @@ export function buildFromUpload(input: {
   const { connections } = input;
   const base = input.invoiceFile.replace(/\.[^.]+$/, '');
   // Use a number from the filename where there is one, so the record matches
-  // the document the user recognises.
+  // the document the user recognizes.
   const digits = base.match(/\d{3,}/)?.[0];
   const number = digits ? `INV-${digits}` : `INV-${base.slice(0, 18).toUpperCase()}`;
   const quantity = 20 + input.index * 5;

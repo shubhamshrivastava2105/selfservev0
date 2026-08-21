@@ -136,7 +136,7 @@ export function InvoiceDetailScreen() {
     return {
       label: posts ? 'Proceed' : 'Download CSV',
       // A dry run comes before a commit, which is why the product shows Proceed
-      // greyed next to a live Simulate.
+      // grayed next to a live Simulate.
       disabled:
         readOnly || (posts && (!matchClear || missingTax > 0 || !invoice.erp.simulated)),
       onClick: () => {
@@ -230,8 +230,10 @@ export function InvoiceDetailScreen() {
             </Box>
           )}
 
-          {/* A hard block stops the stage, so it sits above whatever view is open. */}
-          {!showHistory && block && (
+          {/* A hard block stops the stage it belongs to. Looking back at an
+              earlier stage is a read, so the block and its actions stay on the
+              stage the invoice is actually on. */}
+          {!showHistory && !lookingBack && block && (
             <Box sx={{ px: 3, pb: 2 }}>
               <Alert
                 severity="error"
@@ -346,7 +348,10 @@ export function InvoiceDetailScreen() {
               </Box>
             )}
 
-          {invoice.matchResult && invoice.matchResult.matchTypeUsed !== config.matchType && !showHistory && (
+          {invoice.matchResult &&
+            invoice.matchResult.matchTypeUsed !== config.matchType &&
+            !showHistory &&
+            !lookingBack && (
             <Box sx={{ px: 3, pb: 2 }}>
               <Alert
                 severity="info"
@@ -425,7 +430,7 @@ export function InvoiceDetailScreen() {
             </Alert>
             <TextField
               label="Why is this acceptable?"
-              placeholder="Short shipment agreed with the vendor; the balance was cancelled on the PO."
+              placeholder="Short shipment agreed with the vendor; the balance was canceled on the PO."
               value={reason}
               onChange={(event) => setReason(event.target.value)}
               helperText="Required."

@@ -34,7 +34,25 @@ export function ScenarioSwitcher() {
   const { applyScenario, screen } = useStore();
   // Ask Neo keeps a composer anchored at the bottom, so the trigger steps above
   // it rather than sitting on the send button.
+  /**
+   * The composer is docked at the bottom of Ask Neo, and it grows: a notice
+   * above it wraps to two lines on a narrow window. A fixed offset guessed at
+   * one line and covered the notice's own button, so measure the thing instead
+   * of assuming its height. A demo aid has no business sitting on a product
+   * control.
+   */
   const composerDocked = screen === 'ask-neo';
+  const [dockedHeight, setDockedHeight] = React.useState(84);
+  React.useEffect(() => {
+    if (!composerDocked) return;
+    const dock = document.querySelector('[data-composer-dock]');
+    if (!dock) return;
+    const observer = new ResizeObserver(([entry]) =>
+      setDockedHeight(Math.round(entry.contentRect.height) + 20),
+    );
+    observer.observe(dock);
+    return () => observer.disconnect();
+  }, [composerDocked]);
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState('');
   const [lastApplied, setLastApplied] = React.useState<ScenarioId | null>(null);
@@ -90,7 +108,14 @@ export function ScenarioSwitcher() {
     <>
       {/* Floating trigger. Bottom right, clear of the rail and the app bar. */}
       {!open && (
-        <Box sx={{ position: 'fixed', bottom: composerDocked ? 84 : 20, right: 20, zIndex: 1300 }}>
+        <Box
+          sx={{
+            position: 'fixed',
+            bottom: composerDocked ? dockedHeight : 20,
+            right: 20,
+            zIndex: 1300,
+          }}
+        >
           <Tooltip title="Demo scenarios (press S)" placement="left">
             <Button
               size="sm"

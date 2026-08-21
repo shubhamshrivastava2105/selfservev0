@@ -74,13 +74,6 @@ export function formatRelative(iso: string): string {
   return `${months} month${months === 1 ? '' : 's'} ago`;
 }
 
-/** Whole days between an ISO timestamp and now, floored at zero. */
-export function ageInDays(iso: string): number {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return 0;
-  return Math.max(0, Math.floor((NOW.getTime() - date.getTime()) / 86_400_000));
-}
-
 /** Milliseconds between two ISO timestamps, or null if either is unusable. */
 export function elapsed(fromIso: string | null, toIso: string | null): number | null {
   if (!fromIso || !toIso) return null;

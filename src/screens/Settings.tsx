@@ -84,7 +84,7 @@ export function WorkflowConfigScreen() {
 
           <SectionCard
             title="Confidence"
-            description="Fields read below this are flagged, and matching waits until you acknowledge or correct them. Applies to invoices and reference documents alike."
+            description="A field read below this is flagged for a person to look at, on the invoice and on reference documents alike. Nothing is blocked by a flag — correct what is wrong and carry on."
           >
             <Stack sx={{ gap: 1, maxWidth: 520 }}>
               <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
@@ -212,8 +212,8 @@ export function WorkflowConfigScreen() {
                 />
                 <Typography variant="caption" color="text.secondary" sx={{ ml: 6 }}>
                   With a clean invoice, a connected ERP and nothing flagged, it posts on its own and
-                  never surfaces. Memory learns nothing on this path, since no correction means no
-                  acknowledgment.
+                  never surfaces. Memory learns nothing on this path, because nobody coded a line by
+                  hand for it to learn from.
                 </Typography>
               </Stack>
 
@@ -243,7 +243,7 @@ export function WorkflowConfigScreen() {
 
           <SectionCard
             title="Vendor normalization"
-            description="Legal-entity suffixes, punctuation, casing and whitespace are ignored when comparing vendor names. Confirming a flagged pair teaches it for next time."
+            description="Legal-entity suffixes, punctuation, casing and whitespace are ignored when comparing vendor names. Correcting a flagged name teaches it for next time."
           >
             <Stack sx={{ gap: 1, maxWidth: 520 }}>
               <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
@@ -274,12 +274,12 @@ export function WorkflowConfigScreen() {
 
           <SectionCard
             title="Memory"
-            description="Acknowledge the same correction enough times and it is remembered, then offered back on that field as a suggestion you accept."
+            description="Code the same line the same way enough times and it is remembered, then offered back on that field as a suggestion you accept."
           >
             <Stack sx={{ gap: 3 }}>
               <Stack sx={{ gap: 1, maxWidth: 520 }}>
                 <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography variant="body2">Acknowledgments before a memory forms</Typography>
+                  <Typography variant="body2">Identical codings before a memory forms</Typography>
                   <Chip size="sm" variant="primary" label={config.memoryThreshold} />
                 </Stack>
                 <Slider

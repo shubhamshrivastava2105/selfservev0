@@ -4,7 +4,7 @@ import * as React from 'react';
  * Shared layout breakpoints.
  *
  * These live apart from the shell so the shell and the panel it renders can both
- * use them without importing each other. That cycle broke module initialisation
+ * use them without importing each other. That cycle broke module initialization
  * once already.
  */
 
