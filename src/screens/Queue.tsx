@@ -19,7 +19,6 @@ import {
 import {
   ArrowSquareOutIcon,
   CaretDownIcon,
-  DownloadSimpleIcon,
   EnvelopeSimpleIcon,
   FadersHorizontalIcon,
   FilesIcon,
@@ -35,7 +34,7 @@ import { useStore } from '../store';
 import { EmptyState, StatusChip } from '../components/common';
 import { ShellBar } from '../components/shell';
 import { UploadDialog } from '../components/UploadDialog';
-import { buildCsv, downloadCsv, money, flaggedFields } from '../engine';
+import { money, flaggedFields } from '../engine';
 import { formatDate, formatTime } from '../clock';
 import type { Invoice, InvoiceStatus } from '../types';
 
@@ -49,7 +48,6 @@ export function QueueScreen() {
     connections,
     openInvoice,
     runSamples,
-    markExported,
   } = useStore();
 
   const [tab, setTab] = React.useState<'open' | 'closed'>('open');
@@ -281,25 +279,14 @@ export function QueueScreen() {
   const closedCount = invoices.length - openCount;
   const needsMe = invoices.filter((i) => i.status === 'Action Required').length;
 
-  const exportFiltered = () => {
-    const csv = buildCsv(rows, config);
-    downloadCsv(`neoflo-matched-data-${rows.length}-invoices.csv`, csv);
-    markExported(rows.map((r) => r.id));
-  };
-
   return (
     <>
+      {/* No export from here. It exported whatever was on screen — invoices
+          still at extraction included — under a filename that said matched
+          data, and marked them Exported, which is terminal. A CSV is the
+          alternative to posting, so it belongs on the posting stage, where
+          matching has necessarily already cleared. */}
       <ShellBar>
-        <Button
-          variant="secondary"
-          appearance="outline"
-          size="sm"
-          startIcon={<DownloadSimpleIcon size={16} />}
-          disabled={rows.length === 0}
-          onClick={exportFiltered}
-        >
-          Download CSV
-        </Button>
         {/* A real picker, opened by the click itself so the browser allows it. */}
         <Box
           component="input"
