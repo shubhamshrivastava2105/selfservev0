@@ -371,10 +371,13 @@ export function QueueScreen() {
             sx={{ width: 300 }}
           />
           <Stack direction="row" sx={{ gap: 1 }}>
+            {/* Only once there is something to clear. A permanently disabled
+                button is a control that has never done anything, sitting where
+                a reader has to work out why. */}
+            {isFiltered && (
             <Button
               variant="secondary"
               appearance="outline"
-              disabled={!isFiltered}
               onClick={() => {
                 setSelection({});
                 setSearch('');
@@ -383,6 +386,7 @@ export function QueueScreen() {
             >
               Clear filters
             </Button>
+            )}
             <Button
               variant="secondary"
               appearance="outline"

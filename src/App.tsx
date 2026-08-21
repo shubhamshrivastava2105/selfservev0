@@ -8,6 +8,7 @@ import { InvoiceDetailScreen } from './screens/InvoiceDetail';
 import { WorkflowConfigScreen, WorkspaceConfigScreen } from './screens/Settings';
 import { MembersScreen } from './screens/People';
 import { ReportingScreen } from './screens/Reporting';
+import { DocumentationScreen } from './screens/Documentation';
 
 function Router() {
   const { screen, profile } = useStore();
@@ -28,6 +29,7 @@ function Router() {
       {screen === 'workspace-config' && <WorkspaceConfigScreen />}
       {screen === 'members' && <MembersScreen />}
       {screen === 'reporting' && <ReportingScreen />}
+      {screen === 'documentation' && <DocumentationScreen />}
     </AppShell>
   );
 }

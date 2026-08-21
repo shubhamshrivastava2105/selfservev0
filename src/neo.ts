@@ -35,6 +35,8 @@ export interface NeoContext {
    * can reach, which is what the workflow panel wants.
    */
   selectedSources?: SourceId[];
+  /** Documents the user has set aside. They stay held; answers skip them. */
+  excludedDocumentIds?: string[];
 }
 
 export interface NeoAnswer {
@@ -49,6 +51,8 @@ export interface NeoAnswer {
   outOfScope?: boolean;
   /** A source that holds the answer is switched off, rather than absent. */
   sourceOff?: boolean;
+  /** Which switch puts it back. */
+  remedy?: 'source' | 'document';
 }
 
 function cite(invoice: Invoice): Citation {
@@ -154,7 +158,18 @@ function quoteFrom(text: string, words: string[], nameWords: string[]): string {
   return window.length > 340 ? `${window.slice(0, 320).trim()}…` : window;
 }
 
-function answerFromDocuments(q: string, documents: IndexedDocument[]): NeoAnswer | null {
+/**
+ * The best answer a set of documents can give, with the score that earned it.
+ *
+ * The score is exposed so a caller can compare two sets — which is how "the
+ * document that would have answered this is set aside" gets decided. Without it,
+ * a weak match in the readable set silently wins over a strong match in the
+ * excluded one, and the reader is handed a passage about something else.
+ */
+function scoreDocuments(
+  q: string,
+  documents: IndexedDocument[],
+): { answer: NeoAnswer; best: number } | null {
   const words = q.split(/[^a-z0-9]+/).filter((w) => w.length > 3);
   if (words.length === 0) return null;
   /** The words that say what the question is about, for scoring topics. */
@@ -212,13 +227,16 @@ function answerFromDocuments(q: string, documents: IndexedDocument[]): NeoAnswer
   const best = hits[0].score;
   const top = hits.filter((hit) => hit.score >= best * 0.75).slice(0, 2);
   return {
-    text: top
-      .map((hit) => `From ${hit.doc.name}, page ${hit.page}:\n"${hit.text}"`)
-      .join('\n\n'),
-    citations: top.map((hit) => ({
-      label: hit.doc.name.replace(/\.pdf$/, ''),
-      detail: `page ${hit.page} of ${hit.doc.pages}`,
-    })),
+    best,
+    answer: {
+      text: top
+        .map((hit) => `From ${hit.doc.name}, page ${hit.page}:\n"${hit.text}"`)
+        .join('\n\n'),
+      citations: top.map((hit) => ({
+        label: hit.doc.name.replace(/\.(pdf|md|txt|csv|json)$/i, ''),
+        detail: `page ${hit.page} of ${hit.doc.pages}`,
+      })),
+    },
   };
 }
 
@@ -446,10 +464,15 @@ export function answerQuestion(
    * by hand, and what a workflow ingested. Switching one off takes its documents
    * out of retrieval rather than merely hiding a label.
    */
+  /** A document set aside is out of scope whatever its source says. */
+  const setAside = (doc: IndexedDocument) =>
+    (ctx.excludedDocumentIds ?? []).includes(doc.id);
+  const inScope = documents.filter((d) => !setAside(d));
+
   const readable = [
-    ...(on('uploads') ? documents.filter((d) => d.origin === 'Upload') : []),
+    ...(on('uploads') ? inScope.filter((d) => d.origin === 'Upload') : []),
     // Anything a workflow ingested belongs to that workflow's source.
-    ...(on('workflow:invoiceProcessing') ? documents.filter((d) => d.origin !== 'Upload') : []),
+    ...(on('workflow:invoiceProcessing') ? inScope.filter((d) => d.origin !== 'Upload') : []),
   ];
   const excluded = documents.filter((d) => !readable.includes(d));
 
@@ -463,8 +486,9 @@ export function answerQuestion(
       !on('workflow:invoiceProcessing') ? 'Invoice Processing' : null,
     ].filter(Boolean);
     return {
-      text: `That would come from your documents, and ${off.join(' and ')} ${off.length === 1 ? 'is' : 'are'} switched off as a source. Turn ${off.length === 1 ? 'it' : 'them'} back on and ask again.`,
+      text: `That would come from your documents, and ${off.join(' and ')} ${off.length === 1 ? 'is' : 'are'} switched off as a source.`,
       sourceOff: true,
+      remedy: 'source',
     };
   }
 
@@ -474,8 +498,9 @@ export function answerQuestion(
     );
   if (scope === 'workspace' && asksInvoices && !on('workflow:invoiceProcessing')) {
     return {
-      text: 'That would come from Invoice Processing, and you have that workflow switched off as a source. Turn it back on and ask again.',
+      text: 'That would come from Invoice Processing, and you have that workflow switched off as a source.',
       sourceOff: true,
+      remedy: 'source',
     };
   }
 
@@ -489,32 +514,32 @@ export function answerQuestion(
   // Uploaded documents are the page's reach, not the panel's. The panel stays on
   // the invoice in front of you, on purpose.
   if (scope === 'workspace') {
-    const fromDocuments = answerFromDocuments(q, readable);
-    if (fromDocuments) return fromDocuments;
-
     /**
-     * A document that would have answered this, in a source the user switched
-     * off. Falling through to a vendor lookup here would answer a question
-     * nobody asked; naming the source is the useful thing to say.
+     * Both sets scored, then compared.
+     *
+     * Answering from whatever is readable and only mentioning the excluded set
+     * when nothing readable matched is not good enough: a weak match wins by
+     * default and the reader gets a passage about something else. So if the
+     * excluded set would have answered better, say that instead — the useful
+     * thing here is which switch to flip, not an adjacent quotation.
      */
-    if (excluded.length > 0) {
-      const wouldHave = answerFromDocuments(q, excluded);
-      if (wouldHave) {
-        const names = [
-          ...new Set(
-            excluded
-              .filter((d) => d.passages.some((pg) => pg.topics.some((t) => q.includes(t))))
-              .map(sourceOf),
-          ),
-        ];
-        return {
-          text: `A document could answer that, but it sits in ${
-            names.join(' and ') || 'a source you switched off'
-          }. Switch that source back on and ask again.`,
-          sourceOff: true,
-        };
-      }
+    const inside = scoreDocuments(q, readable);
+    const outside = excluded.length > 0 ? scoreDocuments(q, excluded) : null;
+
+    if (outside && (!inside || outside.best > inside.best)) {
+      const asideMatched = excluded.filter(setAside).length > 0;
+      const names = [...new Set(excluded.filter((d) => !setAside(d)).map(sourceOf))];
+      return {
+        text: asideMatched
+          ? 'A document could answer that, but you have set it aside.'
+          : `A document could answer that, but it sits in ${
+              names.join(' and ') || 'a source you switched off'
+            }.`,
+        sourceOff: true,
+        remedy: asideMatched ? 'document' : 'source',
+      };
     }
+    if (inside) return inside.answer;
 
     if (/document|contract|agreement|policy|handbook|indexed|upload|page/.test(q)) {
       if (readable.length === 0) {

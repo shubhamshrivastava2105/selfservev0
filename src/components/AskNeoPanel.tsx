@@ -118,6 +118,7 @@ export function AskNeoPanel() {
         citations: result.citations,
         ungrounded: result.ungrounded,
         sourceOff: result.sourceOff,
+        remedy: result.remedy,
         outOfScope: result.outOfScope,
       },
     ];

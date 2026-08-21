@@ -24,6 +24,7 @@ import {
   Tooltip,
 } from '@neofloai/atoms';
 import {
+  BookOpenIcon,
   BuildingsIcon,
   CaretUpDownIcon,
   ChatCircleIcon,
@@ -379,11 +380,21 @@ function NavRail() {
         transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
         sx={{ '& .MuiMenu-paper': { minWidth: 240 } }}
       >
-        {/* Who you are, and how to stop being them. Members, Workspace and
-            Workflow are all rail destinations already, and a second route to
-            them here only makes the reader wonder whether it is a third thing. */}
+        {/* You, and the product. Members, Workspace and Workflow belong to this
+            workspace and are rail destinations already; documentation is the
+            same wherever you are, which is why it sits here and not there. */}
         <MenuItem variant="secondary" disabled>
           {profile.email}
+        </MenuItem>
+        <Divider />
+        <MenuItem
+          onClick={() => {
+            setUserAnchor(null);
+            goTo('documentation');
+          }}
+        >
+          <BookOpenIcon size={16} />
+          Documentation
         </MenuItem>
         <Divider />
         <MenuItem onClick={() => setUserAnchor(null)}>

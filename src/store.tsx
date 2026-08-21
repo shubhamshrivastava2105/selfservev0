@@ -120,7 +120,15 @@ interface Store {
    * can say so rather than the upload failing quietly.
    */
   addDocuments: (files: File[]) => Promise<{ indexed: number; unread: string[] }>;
+  /**
+   * Move an upload out of the library. Only the misfiled-invoice route uses
+   * this: a file that became an invoice record has no business also being
+   * reading material. There is no delete in the interface.
+   */
   removeDocument: (id: string) => void;
+  /** Documents excluded from answers, by id. */
+  excludedDocumentIds: string[];
+  setDocumentIncluded: (id: string, included: boolean) => void;
 
   /**
    * Which sources Ask Neo may draw on. Null means every source the person can
@@ -284,8 +292,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [uploads, setUploads] = React.useState<IndexedDocument[]>(() =>
     loadPersisted<IndexedDocument[]>('uploads', []),
   );
-  const [hiddenSeedIds, setHiddenSeedIds] = React.useState<string[]>(() =>
-    loadPersisted<string[]>('hiddenSeeds', []),
+  /**
+   * Documents left out of answers.
+   *
+   * Excluded, not deleted: a document you attached is still yours, and taking it
+   * out of scope for a question is not the same as destroying it. Persisted for
+   * the same reason the uploads are.
+   */
+  const [excludedDocumentIds, setExcludedDocumentIds] = React.useState<string[]>(() =>
+    loadPersisted<string[]>('excludedDocuments', []),
   );
   const [selectedSources, setSelectedSources] = React.useState<SourceId[] | null>(() =>
     loadPersisted<SourceId[] | null>('sources', null),
@@ -306,7 +321,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   /* ── What a person put in by hand, kept across reloads ─────────────── */
 
   React.useEffect(() => savePersisted('uploads', uploads), [uploads]);
-  React.useEffect(() => savePersisted('hiddenSeeds', hiddenSeedIds), [hiddenSeedIds]);
+  React.useEffect(
+    () => savePersisted('excludedDocuments', excludedDocumentIds),
+    [excludedDocumentIds],
+  );
   React.useEffect(() => savePersisted('sources', selectedSources), [selectedSources]);
   React.useEffect(() => savePersisted('conversations', conversations), [conversations]);
 
@@ -318,8 +336,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   /** Uploads first, then the seeded corpus minus anything the user removed. */
   const documents = React.useMemo(
-    () => [...uploads, ...INDEXED_DOCUMENTS.filter((d) => !hiddenSeedIds.includes(d.id))],
-    [uploads, hiddenSeedIds],
+    () => [...uploads, ...INDEXED_DOCUMENTS],
+    [uploads],
   );
 
   /**
@@ -1197,7 +1215,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setMembers(MEMBERS);
       setMemory(MEMORY_PATTERNS);
       // Uploads and source choices are the user's, so a scenario leaves them be.
-      setHiddenSeedIds([]);
+      setExcludedDocumentIds([]);
       setDiscoverableWorkspaces(DISCOVERABLE_WORKSPACES);
       setConversations([]);
       setActiveConversationId(null);
@@ -1525,14 +1543,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     },
     removeDocument: (id) => {
       const target = documents.find((d) => d.id === id);
-      if (uploads.some((d) => d.id === id)) {
-        setUploads((previous) => previous.filter((d) => d.id !== id));
-      } else {
-        // A seed comes back from data.ts on every load, so hiding it has to be
-        // remembered the same way an upload is.
-        setHiddenSeedIds((previous) => [...previous, id]);
-      }
-      log('Document removed', `${target?.name ?? id}. Answers stop drawing on it immediately.`);
+      setUploads((previous) => previous.filter((d) => d.id !== id));
+      log('Document moved', `${target?.name ?? id} left the reading library.`);
+    },
+    excludedDocumentIds,
+    setDocumentIncluded: (id, included) => {
+      const target = documents.find((d) => d.id === id);
+      setExcludedDocumentIds((previous) =>
+        included ? previous.filter((d) => d !== id) : [...new Set([...previous, id])],
+      );
+      log(
+        included ? 'Document included' : 'Document set aside',
+        `${target?.name ?? id}${included ? ' is back in scope for answers.' : ' is out of scope until you put it back.'}`,
+      );
     },
     selectedSources,
     setSourceSelected: (id, on) => {

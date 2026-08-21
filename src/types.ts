@@ -31,7 +31,9 @@ export type Screen =
   /** Workspace-level: integrations, and who can join. */
   | 'workspace-config'
   | 'members'
-  | 'reporting';
+  | 'reporting'
+  /** Product documentation. The same for every workspace, so it sits outside them. */
+  | 'documentation';
 
 /**
  * Who can join a workspace. Public by default, so a colleague who signs up
@@ -443,4 +445,6 @@ export interface ChatTurn {
    * ungrounded: the material exists, the selection excludes it.
    */
   sourceOff?: boolean;
+  /** Which switch puts it back, so the notice names the right one. */
+  remedy?: 'source' | 'document';
 }

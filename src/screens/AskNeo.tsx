@@ -19,11 +19,9 @@ import {
   CaretDownIcon,
   CheckIcon,
   DatabaseIcon,
-  FilePdfIcon,
   PaperPlaneRightIcon,
   PaperclipIcon,
   SparkleIcon,
-  TrashIcon,
   UploadSimpleIcon,
 } from '@neofloai/atoms/icons';
 import { useStore } from '../store';
@@ -313,8 +311,14 @@ function ChatTurnView({ turn }: { turn: ChatTurn }) {
         {turn.text}
       </Typography>
       {turn.sourceOff ? (
-        <Alert severity="info" floating title="A source is switched off">
-          Open the source picker beside the composer and switch it back on.
+        <Alert
+          severity="info"
+          floating
+          title={turn.remedy === 'document' ? 'A document is set aside' : 'A source is switched off'}
+        >
+          {turn.remedy === 'document'
+            ? 'Tick it again behind the paperclip, then ask once more.'
+            : 'Open the source picker beside the composer and switch it back on.'}
         </Alert>
       ) : (
         turn.ungrounded && (
@@ -403,13 +407,14 @@ function MisfiledNotice({ names, onDismiss }: { names: string[]; onDismiss: () =
  */
 function AttachmentMenu({ onAttached }: { onAttached: (names: string[]) => void }) {
   const store = useStore();
-  const { documents, addDocuments, removeDocument } = store;
+  const { documents, addDocuments, excludedDocumentIds, setDocumentIncluded } = store;
   const [anchor, setAnchor] = React.useState<HTMLElement | null>(null);
   const [unread, setUnread] = React.useState<string[]>([]);
   const [busy, setBusy] = React.useState(false);
   const fileInput = React.useRef<HTMLInputElement | null>(null);
   const totalPages = documents.reduce((sum, d) => sum + d.pages, 0);
-  const uploads = documents.filter((d) => d.origin === 'Upload');
+  const inScope = documents.filter((d) => !excludedDocumentIds.includes(d.id));
+  const scopedPages = inScope.reduce((sum, d) => sum + d.pages, 0);
 
   const take = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -496,39 +501,44 @@ function AttachmentMenu({ onAttached }: { onAttached: (names: string[]) => void 
         ) : (
           <>
             <MenuItem variant="secondary" disabled>
-              {documents.length} attached · {totalPages.toLocaleString('en-US')} pages
-              {uploads.length > 0 && ` · ${uploads.length} yours, kept across reloads`}
+              {inScope.length === documents.length
+                ? `All ${documents.length} in scope · ${totalPages.toLocaleString('en-US')} pages`
+                : `${inScope.length} of ${documents.length} in scope · ${scopedPages.toLocaleString('en-US')} pages`}
             </MenuItem>
-            {documents.map((doc) => (
-              <MenuItem key={doc.id} sx={{ alignItems: 'flex-start' }}>
-                <FilePdfIcon size={16} />
-                <Stack sx={{ flex: 1, minWidth: 0, gap: 0 }}>
-                  <Typography variant="body2" noWrap>
-                    {doc.name}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {doc.pages} page{doc.pages === 1 ? '' : 's'} ·{' '}
-                    {formatRelative(doc.indexedAt)}
-                    {doc.isSample && ' · sample'}
-                    {doc.contentRead === false && ' · held, contents not read'}
-                  </Typography>
-                </Stack>
-                <Tooltip title="Remove">
-                  <IconButton
-                    variant="secondary"
-                    appearance="text"
-                    size="sm"
-                    aria-label={`Remove ${doc.name}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      removeDocument(doc.id);
-                    }}
-                  >
-                    <TrashIcon />
-                  </IconButton>
-                </Tooltip>
-              </MenuItem>
-            ))}
+            {documents.map((doc) => {
+              const included = !excludedDocumentIds.includes(doc.id);
+              return (
+                <MenuItem
+                  key={doc.id}
+                  // Checkable rather than deletable: setting a document aside is
+                  // reversible, and losing one to a stray click is not.
+                  role="menuitemcheckbox"
+                  aria-checked={included}
+                  onClick={() => setDocumentIncluded(doc.id, !included)}
+                  sx={{ alignItems: 'flex-start' }}
+                >
+                  <Box sx={{ width: 16, flexShrink: 0, pt: 0.25 }} aria-hidden>
+                    {included && <CheckIcon size={16} />}
+                  </Box>
+                  <Stack sx={{ flex: 1, minWidth: 0, gap: 0 }}>
+                    <Typography
+                      variant="body2"
+                      noWrap
+                      color={included ? 'text.primary' : 'text.secondary'}
+                    >
+                      {doc.name}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {doc.pages} page{doc.pages === 1 ? '' : 's'} ·{' '}
+                      {formatRelative(doc.indexedAt)}
+                      {doc.isSample && ' · sample'}
+                      {doc.contentRead === false && ' · held, contents not read'}
+                      {!included && ' · set aside'}
+                    </Typography>
+                  </Stack>
+                </MenuItem>
+              );
+            })}
           </>
         )}
 
@@ -685,6 +695,7 @@ export function AskNeoScreen() {
           connections: store.connections,
           viewer: store.viewer,
           selectedSources: store.selectedSources ?? undefined,
+          excludedDocumentIds: store.excludedDocumentIds,
         },
         { scope: 'workspace' },
       );
@@ -698,6 +709,7 @@ export function AskNeoScreen() {
           citations: result.citations,
           ungrounded: result.ungrounded,
           sourceOff: result.sourceOff,
+          remedy: result.remedy,
         },
       ]);
       setDraft('');
@@ -711,6 +723,7 @@ export function AskNeoScreen() {
       store.connections,
       store.viewer,
       store.selectedSources,
+      store.excludedDocumentIds,
       pushChat,
     ],
   );
