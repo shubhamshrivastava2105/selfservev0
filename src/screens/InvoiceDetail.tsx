@@ -211,25 +211,6 @@ export function InvoiceDetailScreen() {
             )}
           </Stack>
 
-          {/* A look back is a read. Say so, rather than letting an inert
-              screen read as a broken one. */}
-          {!showHistory && lookingBack && (
-            <Box sx={{ px: 3, pb: 2 }}>
-              <Alert
-                severity="info"
-                title={`${STAGE_LABEL[shown]} is behind this invoice`}
-                action={
-                  <Button variant="secondary" appearance="outline" size="sm" onClick={() => setViewStage(null)}>
-                    Back to {STAGE_LABEL[stage]}
-                  </Button>
-                }
-              >
-                Shown as it was left. Editing happens on {STAGE_LABEL[stage]}, where the invoice is
-                now.
-              </Alert>
-            </Box>
-          )}
-
           {/* A hard block stops the stage it belongs to. Looking back at an
               earlier stage is a read, so the block and its actions stay on the
               stage the invoice is actually on. */}

@@ -1,9 +1,11 @@
 import * as React from 'react';
 import { Box, Button, IconButton, Stack, Tooltip, Typography } from '@neofloai/atoms';
 import { ColorModeToggle } from './common';
+import { useShell } from './shell';
 import {
   ArrowRightIcon,
   ClockCounterClockwiseIcon,
+  SidebarSimpleIcon,
   SparkleIcon,
 } from '@neofloai/atoms/icons';
 
@@ -37,19 +39,35 @@ export function RecordHeader({
   /** Simulate, on the posting stage. */
   secondary?: { label: string; disabled?: boolean; onClick: () => void };
 }) {
+  const { collapsed, toggleCollapsed } = useShell();
   return (
     <Stack
       direction="row"
       sx={{
         px: 2.5,
         py: 1.5,
-        gap: 2,
-        alignItems: 'flex-start',
+        gap: 1.5,
+        alignItems: 'center',
         borderBottom: '1px solid',
         borderColor: 'divider',
         flexShrink: 0,
       }}
     >
+      {/* This header replaces the app bar, so the rail's own control has to be
+          here too — otherwise opening an invoice is a one-way door into a
+          collapsed rail. The product puts it in the same corner. */}
+      <Tooltip title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+        <IconButton
+          variant="secondary"
+          appearance="text"
+          size="sm"
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          onClick={toggleCollapsed}
+        >
+          <SidebarSimpleIcon />
+        </IconButton>
+      </Tooltip>
+
       <Stack sx={{ flex: 1, minWidth: 0, gap: 0.25 }}>
         <Typography variant="h5" component="h1">
           {title}

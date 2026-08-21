@@ -517,6 +517,67 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         ? { ...invoice, poFields: next }
         : { ...invoice, grnFields: next };
 
+  /**
+   * A corrected field that the record also holds as a value of its own.
+   *
+   * Correcting "Vendor Name" means the document says something different from
+   * what was read — so the record says it too. Without this the correction
+   * reaches the field and nothing else: the dashboard, reporting, the CSV, the
+   * ERP payload and Neo all keep quoting the misread value, and the record
+   * header sits above a table that disagrees with it.
+   *
+   * Typed values are parsed, and a value that will not parse is left alone. The
+   * field keeps whatever the user typed either way — a date that reads as prose
+   * is still their correction, it just cannot become a timestamp.
+   */
+  const promoteToRecord = (invoice: Invoice, key: string, value: string): Invoice => {
+    const text = value.trim();
+    switch (key) {
+      case 'number':
+        return text === '' ? invoice : { ...invoice, number: text };
+      case 'vendor':
+        return text === '' ? invoice : { ...invoice, vendor: text };
+      case 'currency':
+        return text === '' ? invoice : { ...invoice, currency: text.toUpperCase() };
+      case 'po':
+        return { ...invoice, poNumber: text === '' || text === '\u2014' ? null : text };
+      case 'date': {
+        const parsed = new Date(text);
+        if (Number.isNaN(parsed.getTime())) return invoice;
+        return { ...invoice, invoiceDate: parsed.toISOString() };
+      }
+      case 'total': {
+        const amount = Number(text.replace(/[^0-9.-]/g, ''));
+        if (!Number.isFinite(amount)) return invoice;
+        return { ...invoice, amount: Number(amount.toFixed(2)) };
+      }
+      default:
+        return invoice;
+    }
+  };
+
+  /**
+   * The ERP fields the posting screen derives and shows disabled, refreshed
+   * after a correction moved what they derive from. The ones a person types are
+   * never touched — that is exactly the line the screen already draws between
+   * greyed and live.
+   */
+  const withDerivedErp = (invoice: Invoice): Invoice => {
+    const poTotal = invoice.lines.reduce((sum, l) => sum + l.poLineTotal, 0);
+    const beforeVat = invoice.lines.reduce((sum, l) => sum + l.invoiceLineTotal, 0);
+    return {
+      ...invoice,
+      erp: {
+        ...invoice.erp,
+        poNumber: invoice.poNumber ?? '',
+        amountBeforeVat: Number(beforeVat.toFixed(2)),
+        totalAfterVat: invoice.amount,
+        referenceNumber: `NL${invoice.number.replace(/\D/g, '').padStart(9, '0')}`,
+        variance: Number((invoice.amount - poTotal).toFixed(2)),
+      },
+    };
+  };
+
   const editField = React.useCallback<Store['editField']>(
     (id, scope, key, value) => {
       patch(id, (invoice) => {
@@ -535,8 +596,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
               }
             : f,
         );
+        const edited = withFields(invoice, scope, next);
+        // Only the invoice's own reads speak for the record. A PO or receipt
+        // field is what the counterparty's document says, not what ours does.
+        const promoted =
+          scope === 'invoice' ? withDerivedErp(promoteToRecord(edited, key, value)) : edited;
         return {
-          ...withFields(invoice, scope, next),
+          ...promoted,
           audit: appendAudit(
             invoice,
             'Field corrected',

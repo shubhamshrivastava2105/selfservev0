@@ -17,6 +17,10 @@ export const STAGE_LABEL: Record<Stage, string> = {
  * A record only ever moves forward, so going back is a read: the invoice keeps
  * the stage it earned and this just changes which view is on screen. A stage
  * ahead of the record is not offered, because nothing has happened there yet.
+ *
+ * Two states can be true at once and are drawn differently: the stage you are
+ * reading carries a fill, and the stage the invoice is actually on carries a
+ * ring. Usually they are the same stage and you see one thing.
  */
 export function StageNav({
   reached,
@@ -37,6 +41,13 @@ export function StageNav({
         const passed = index < reachedIndex;
         const available = index <= reachedIndex;
         const active = stage === viewing;
+        /**
+         * Where the invoice actually is, when you are looking at an earlier
+         * stage. The reading and the record are two different facts and the nav
+         * is the place that already holds both — a banner explaining it was one
+         * more thing to read.
+         */
+        const isCurrent = stage === reached;
 
         return (
           <React.Fragment key={stage}>
@@ -53,9 +64,12 @@ export function StageNav({
                 onClick={() => onView(stage)}
                 sx={{
                   textTransform: 'none',
-                  fontWeight: active ? 600 : 400,
-                  color: active ? 'text.primary' : 'text.secondary',
+                  fontWeight: active || isCurrent ? 600 : 400,
+                  color: active || isCurrent ? 'text.primary' : 'text.secondary',
                   backgroundColor: active ? 'action.selected' : undefined,
+                  // A ring rather than a fill: the fill means "you are reading
+                  // this", the ring means "the invoice is here".
+                  boxShadow: isCurrent && !active ? (theme) => `inset 0 0 0 1px ${theme.palette.divider}` : undefined,
                 }}
               >
                 {STAGE_LABEL[stage]}

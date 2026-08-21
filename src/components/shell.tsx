@@ -74,6 +74,14 @@ interface ShellState {
 const ShellContext = React.createContext<ShellState>({ collapsed: false, toggleCollapsed: () => {} });
 
 /**
+ * The rail's collapsed state, for headers that replace the app bar and would
+ * otherwise lose the control that opens it.
+ */
+export function useShell(): ShellState {
+  return React.useContext(ShellContext);
+}
+
+/**
  * One nav row. A pill the width of the block expanded, a square the height of
  * the row collapsed — a wide fill beside a column of icons reads as a rectangle.
  */
@@ -371,18 +379,11 @@ function NavRail() {
         transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
         sx={{ '& .MuiMenu-paper': { minWidth: 240 } }}
       >
+        {/* Who you are, and how to stop being them. Members, Workspace and
+            Workflow are all rail destinations already, and a second route to
+            them here only makes the reader wonder whether it is a third thing. */}
         <MenuItem variant="secondary" disabled>
           {profile.email}
-        </MenuItem>
-        <Divider />
-        <MenuItem onClick={() => { setUserAnchor(null); goTo('members'); }}>
-          Members and roles
-        </MenuItem>
-        <MenuItem onClick={() => { setUserAnchor(null); goTo('workspace-config'); }}>
-          Workspace configuration
-        </MenuItem>
-        <MenuItem onClick={() => { setUserAnchor(null); goTo('workflow-config'); }}>
-          Workflow configuration
         </MenuItem>
         <Divider />
         <MenuItem onClick={() => setUserAnchor(null)}>
