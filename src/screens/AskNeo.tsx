@@ -212,6 +212,79 @@ function ResumeMessage() {
   );
 }
 
+/**
+ * Conversations already had, on the page you land on.
+ *
+ * The point of history is picking a thread back up, and the moment that is
+ * cheapest to offer is the moment before you have typed anything. Behind a
+ * button in the bar it is only found by someone who already suspects it exists.
+ *
+ * Recent ones only. The bar's menu is the whole list, for when you are already
+ * inside a thread and this page is not on screen.
+ */
+function HistoryMessage() {
+  const { conversations, openConversation } = useStore();
+  const [showAll, setShowAll] = React.useState(false);
+  if (conversations.length === 0) return null;
+
+  const RECENT = 3;
+  const shown = showAll ? conversations : conversations.slice(0, RECENT);
+  const hidden = conversations.length - shown.length;
+
+  return (
+    <NeoMessage>
+      <Typography variant="body2">
+        {conversations.length === 1 ? 'You asked me this before.' : 'You asked me these before.'}
+      </Typography>
+      <Stack sx={{ gap: 1 }}>
+        {shown.map((conversation) => {
+          const questions = conversation.turns.filter((t) => t.role === 'user').length;
+          return (
+            <Stack
+              key={conversation.id}
+              direction="row"
+              sx={{
+                gap: 2,
+                alignItems: 'center',
+                p: 1.5,
+                borderRadius: 1,
+                border: '1px solid',
+                borderColor: 'divider',
+              }}
+            >
+              <Stack sx={{ flex: 1, minWidth: 0, gap: 0.25 }}>
+                <Typography variant="body2" weight="medium" noWrap>
+                  {conversation.title}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {questions} question{questions === 1 ? '' : 's'} ·{' '}
+                  {formatRelative(conversation.lastAt)}
+                </Typography>
+              </Stack>
+              <Button
+                variant="secondary"
+                appearance="outline"
+                size="sm"
+                endIcon={<ArrowRightIcon size={16} />}
+                onClick={() => openConversation(conversation.id)}
+              >
+                Open
+              </Button>
+            </Stack>
+          );
+        })}
+      </Stack>
+      {hidden > 0 && (
+        <Box>
+          <Button variant="secondary" appearance="text" size="sm" onClick={() => setShowAll(true)}>
+            {hidden} more
+          </Button>
+        </Box>
+      )}
+    </NeoMessage>
+  );
+}
+
 /** The activation checklist, as something Neo offers rather than a panel. */
 function ChecklistMessage() {
   const { progress, connections, goTo, dismissChecklist } = useStore();
@@ -782,18 +855,23 @@ export function AskNeoScreen() {
   return (
     <>
       <ShellBar>
+        {/* Only while a thread is open. On the landing page the recent list is
+            already on the page, and two ways to the same thing in one view is
+            one too many. */}
         {chat.length > 0 && (
-          <Button
-            variant="secondary"
-            appearance="outline"
-            size="sm"
-            startIcon={<ArrowLeftIcon size={16} />}
-            onClick={clearChat}
-          >
-            New question
-          </Button>
+          <>
+            <Button
+              variant="secondary"
+              appearance="outline"
+              size="sm"
+              startIcon={<ArrowLeftIcon size={16} />}
+              onClick={clearChat}
+            >
+              New question
+            </Button>
+            <HistoryMenu />
+          </>
         )}
-        <HistoryMenu />
       </ShellBar>
 
       {/* The thread. Everything Neo has to say, oldest first. */}
@@ -832,6 +910,7 @@ export function AskNeoScreen() {
                   <>
                     <BriefingMessage />
                     <ResumeMessage />
+                    <HistoryMessage />
                     <ChecklistMessage />
                   </>
                 )}
