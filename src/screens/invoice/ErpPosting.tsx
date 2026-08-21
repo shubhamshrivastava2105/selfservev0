@@ -21,9 +21,16 @@ import {
   Tooltip,
   Typography,
 } from '@neofloai/atoms';
-import { CaretLeftIcon, CaretRightIcon, FilePdfIcon, ScissorsIcon, UploadSimpleIcon } from '@neofloai/atoms/icons';
+import {
+  CaretDownIcon,
+  CaretLeftIcon,
+  CaretRightIcon,
+  FilePdfIcon,
+  ScissorsIcon,
+  UploadSimpleIcon,
+} from '@neofloai/atoms/icons';
 import { VAT_CODES, WHT_CODES } from '../../data';
-import { CodePicker } from '../../components/CodePicker';
+import { CodePicker, ColumnCodePicker } from '../../components/CodePicker';
 import { useStore } from '../../store';
 import { money } from '../../engine';
 import { formatDateTime } from '../../clock';
@@ -44,6 +51,7 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
 
   // Opens itself when a run comes back, and is dismissable.
   const [showResult, setShowResult] = React.useState(false);
+  const [rowsPerPage, setRowsPerPage] = React.useState(10);
   const lastRun = React.useRef<string | null>(null);
   React.useEffect(() => {
     if (erp.simulated && erp.simulated.at !== lastRun.current) {
@@ -94,16 +102,27 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
           <Stack sx={{ gap: 1 }}>
             <Typography variant="body2">Documents ({1 + invoice.attachments.length})</Typography>
             <Stack direction="row" sx={{ gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
-              <Button
-                variant="secondary"
-                appearance="outline"
-                size="sm"
-                startIcon={<UploadSimpleIcon size={16} />}
-                disabled={readOnly}
-                sx={{ borderStyle: 'dashed' }}
-              >
-                Upload Files
-              </Button>
+              <Stack direction="row" sx={{ gap: 0.5, alignItems: 'stretch' }}>
+                <Button
+                  variant="secondary"
+                  appearance="outline"
+                  size="sm"
+                  startIcon={<UploadSimpleIcon size={16} />}
+                  disabled={readOnly}
+                  sx={{ borderStyle: 'dashed' }}
+                >
+                  Upload Files
+                </Button>
+                <IconButton
+                  variant="secondary"
+                  appearance="outline"
+                  size="sm"
+                  aria-label="Other ways to attach a document"
+                  disabled={readOnly}
+                >
+                  <CaretDownIcon />
+                </IconButton>
+              </Stack>
               <Chip
                 size="sm"
                 variant="secondary"
@@ -132,8 +151,36 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
                 <TableCell sx={{ fontFamily: 'mono' }} align="right">
                   Line Total
                 </TableCell>
-                <TableCell sx={{ fontFamily: 'mono', minWidth: 170 }}>VAT/GST Code</TableCell>
-                <TableCell sx={{ fontFamily: 'mono', minWidth: 150 }}>WHT Code</TableCell>
+                <TableCell sx={{ fontFamily: 'mono', minWidth: 190 }}>
+                  <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>
+                    <Box component="span" sx={{ flex: 1 }}>
+                      VAT/GST Code
+                    </Box>
+                    <ColumnCodePicker
+                      heading="VAT/GST code"
+                      options={VAT_CODES}
+                      disabled={readOnly}
+                      onPickAll={(value) =>
+                        invoice.lines.forEach((l) => setLineCode(invoice.id, l.id, 'vat', value))
+                      }
+                    />
+                  </Stack>
+                </TableCell>
+                <TableCell sx={{ fontFamily: 'mono', minWidth: 170 }}>
+                  <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>
+                    <Box component="span" sx={{ flex: 1 }}>
+                      WHT Code
+                    </Box>
+                    <ColumnCodePicker
+                      heading="WHT code"
+                      options={WHT_CODES}
+                      disabled={readOnly}
+                      onPickAll={(value) =>
+                        invoice.lines.forEach((l) => setLineCode(invoice.id, l.id, 'wht', value))
+                      }
+                    />
+                  </Stack>
+                </TableCell>
                 <TableCell padding="checkbox" />
               </TableRow>
             </TableHead>
@@ -200,6 +247,20 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
           <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'mono' }}>
             Total {invoice.lines.length} items
           </Typography>
+          <Stack direction="row" sx={{ gap: 1.5, alignItems: 'center' }}>
+            <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'mono' }}>
+              Rows per page
+            </Typography>
+            <CodePicker
+              label="Rows per page"
+              rowLabel="this table"
+              value={String(rowsPerPage)}
+              options={['10', '25', '50']}
+              onPick={(value) => setRowsPerPage(Number(value))}
+              minWidth={72}
+              fullWidth={false}
+            />
+          </Stack>
           <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>
             <IconButton variant="secondary" appearance="text" size="sm" aria-label="Previous page" disabled>
               <CaretLeftIcon />
