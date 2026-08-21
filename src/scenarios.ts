@@ -13,6 +13,7 @@ export type ScenarioId =
   | 'signup-personal-provider'
   | 'signup-invited'
   | 'signup-nothing-open'
+  | 'landing-long-document'
   | 'landing-first-visit'
   | 'landing-return'
   | 'extraction-low-confidence'
@@ -88,6 +89,13 @@ export const SCENARIOS: Scenario[] = [
     group: 'Landing',
     label: 'Returning visit',
     detail: 'Time-of-day greeting, a resume card for the last invoice, then the briefing.',
+  },
+  {
+    id: 'landing-long-document',
+    group: 'Landing',
+    label: 'A long document already indexed',
+    detail:
+      'A 187-page contract bundle, for asking across a document no general assistant would take. Ask when a vendor can raise prices, or about notice on termination.',
   },
 
   {

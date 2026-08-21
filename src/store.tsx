@@ -131,8 +131,6 @@ interface Store {
    * can say so rather than the upload failing quietly.
    */
   addDocuments: (files: File[]) => Promise<{ indexed: number; unread: string[] }>;
-  /** A long document with quotable passages, for demonstrating the capability. */
-  addSampleDocument: () => void;
   removeDocument: (id: string) => void;
 
   /**
@@ -1368,6 +1366,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         setLastOpenedInvoiceId('inv-77120');
         break;
 
+      case 'landing-long-document':
+        enterApp('ask-neo');
+        setLandingMode('return');
+        // A long document with quotable passages, because a real PDF's text
+        // cannot be read in the browser and this capability needs something to
+        // be demonstrated on.
+        setUploads((previous) => {
+          const built = buildUploadedDocument(1);
+          return [built, ...previous.filter((d) => d.id !== built.id)];
+        });
+        break;
+
       case 'extraction-low-confidence':
       case 'extraction-attachments':
         enterApp();
@@ -1540,12 +1550,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         `${built.map((d) => d.name).join(', ')} · ${pages} pages`,
       );
       return { indexed: built.length, unread };
-    },
-    addSampleDocument: () => {
-      const batch = uploads.filter((d) => d.isSample).length + 1;
-      const built = buildUploadedDocument(batch);
-      setUploads((previous) => [built, ...previous.filter((p) => p.id !== built.id)]);
-      log('Sample document indexed', `${built.name} · ${built.pages} pages`);
     },
     removeDocument: (id) => {
       const target = documents.find((d) => d.id === id);

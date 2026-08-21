@@ -376,7 +376,7 @@ function MisfiledNotice({ names, onDismiss }: { names: string[]; onDismiss: () =
  */
 function AttachmentMenu({ onAttached }: { onAttached: (names: string[]) => void }) {
   const store = useStore();
-  const { documents, addDocuments, addSampleDocument, removeDocument } = store;
+  const { documents, addDocuments, removeDocument } = store;
   const [anchor, setAnchor] = React.useState<HTMLElement | null>(null);
   const [unread, setUnread] = React.useState<string[]>([]);
   const [busy, setBusy] = React.useState(false);
@@ -458,15 +458,6 @@ function AttachmentMenu({ onAttached }: { onAttached: (names: string[]) => void 
         >
           <UploadSimpleIcon size={16} />
           {busy ? 'Indexing…' : 'Attach a document to ask about'}
-        </MenuItem>
-        <MenuItem
-          onClick={() => {
-            addSampleDocument();
-            setAnchor(null);
-          }}
-        >
-          <FilePdfIcon size={16} />
-          Add a long sample document
         </MenuItem>
 
         <Divider />
