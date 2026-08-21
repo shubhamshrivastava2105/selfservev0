@@ -729,13 +729,15 @@ export function AskNeoScreen() {
                   </Typography>
                 </Stack>
 
+                {/* The checklist belongs to a first visit. Coming back, the
+                    briefing and the resume card are what you want — a list of
+                    setup steps above them is the wrong thing leading. */}
                 {firstVisit ? (
                   <ChecklistMessage />
                 ) : (
                   <>
                     <BriefingMessage />
                     <ResumeMessage />
-                    <ChecklistMessage />
                   </>
                 )}
               </>
