@@ -100,15 +100,20 @@ function Tile({
 }
 
 /**
- * What is waiting, and what happened without you.
+ * What changed since last time — a returning surface only.
+ *
+ * A first-time reader does not need a state-of-the-workspace report: they have
+ * no last time to compare against, and a board of somebody else's numbers is a
+ * thing to decipher rather than a thing to do. The path card is what shows
+ * instead.
  *
  * A tile worth nothing is left out rather than printed as a zero: three zeros
  * are both uninformative and the fastest way to make a new workspace feel like
  * a dashboard someone has to fill in. If there is nothing at all to say, the
  * briefing does not appear.
  */
-function BriefingMessage({ firstVisit }: { firstVisit: boolean }) {
-  const { invoices, memory, config, profile, goTo, openInvoice } = useStore();
+function BriefingMessage() {
+  const { invoices, memory, config, goTo, openInvoice } = useStore();
   const needsMe = invoices.filter((i) => i.status === 'Action Required');
   const stp = invoices.filter((i) => i.stpPosted);
   const learned = memory.filter((m) => m.streak >= config.memoryThreshold);
@@ -143,27 +148,12 @@ function BriefingMessage({ firstVisit }: { firstVisit: boolean }) {
 
   return (
     <NeoMessage>
-      {/* On a first visit this is somebody else's work in progress. Calling it
-          "your workspace" and "where it stands" claims a history this person
-          does not have — they joined a team that was already going. */}
-      <Typography variant="body2">
-        {firstVisit
-          ? `You have joined ${profile.workspaceName || 'a workspace'}, and it is already processing invoices. Here is what is open.`
-          : 'Here is what changed while you were away.'}
-      </Typography>
+      <Typography variant="body2">Here is what changed while you were away.</Typography>
       <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
         {needsMe.length > 0 && (
           <Tile
             value={needsMe.length}
-            label={
-              firstVisit
-                ? needsMe.length === 1
-                  ? 'invoice needs a person'
-                  : 'invoices need a person'
-                : needsMe.length === 1
-                  ? 'invoice needs you'
-                  : 'invoices need you'
-            }
+            label={needsMe.length === 1 ? 'invoice needs you' : 'invoices need you'}
             detail={needsMe.slice(0, 3).map((i) => i.number).join(', ') || undefined}
             action={
               <Button size="sm" endIcon={<ArrowRightIcon size={14} />} onClick={() => goTo('queue')}>
@@ -175,7 +165,7 @@ function BriefingMessage({ firstVisit }: { firstVisit: boolean }) {
         {stp.length > 0 && (
           <Tile
             value={stp.length}
-            label={firstVisit ? 'posted with nobody involved' : 'posted without needing you'}
+            label="posted without needing you"
             detail={stp.map((i) => i.number).join(', ') || undefined}
             action={
               <Button
@@ -860,13 +850,18 @@ export function AskNeoScreen() {
                   </Typography>
                 </Stack>
 
-                {/* Value first, either way. A first visit gets what is already
-                    waiting rather than a list of things to do; an empty
-                    workspace gets one way in rather than five. */}
+                {/* A first visit gets the steps and nothing else to read. Once
+                    there is a last time to compare against, the briefing and
+                    the resume card are the useful things. */}
                 <StartHereMessage />
-                <BriefingMessage firstVisit={firstVisit} />
-                {firstVisit && <FirstStepsMessage />}
-                {!firstVisit && <ResumeMessage />}
+                {firstVisit ? (
+                  <FirstStepsMessage />
+                ) : (
+                  <>
+                    <BriefingMessage />
+                    <ResumeMessage />
+                  </>
+                )}
               </>
             )}
 
