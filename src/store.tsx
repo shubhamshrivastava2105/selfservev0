@@ -9,20 +9,33 @@ import * as React from 'react';
 import {
   DEFAULT_CONFIG,
   DEFAULT_CONNECTIONS,
+  DISCOVERABLE_WORKSPACES,
+  INDEXED_DOCUMENTS,
   INITIAL_INVOICES,
   LEGAL_ENTITY,
   MEMBERS,
   MEMORY_PATTERNS,
+  PENDING_INVITE,
   SIGNED_IN,
   SOURCES,
+  VISIBILITY_COPY,
+  buildFromUpload,
   buildSamples,
   buildUpload,
+  buildUploadedDocument,
+  readDomain,
 } from './data';
 import { deriveStatus, runMatching, stamp } from './engine';
+import { at, formatDate, now } from './clock';
+import type { ScenarioId } from './scenarios';
 import type {
   AuditEntry,
   ChatTurn,
   Connections,
+  DiscoverableWorkspace,
+  DocumentKind,
+  DomainVerdict,
+  IndexedDocument,
   Invoice,
   InvoiceSource,
   Member,
@@ -32,6 +45,7 @@ import type {
   SignupMethod,
   WorkflowConfig,
   WorkflowRole,
+  WorkspaceVisibility,
 } from './types';
 
 export type FieldScope = 'invoice' | 'po' | 'grn';
@@ -41,6 +55,9 @@ export interface Profile {
   lastName: string;
   email: string;
   method: SignupMethod | null;
+  /** What the form worked out about the address. */
+  domainVerdict: DomainVerdict | null;
+  domain: string;
   routePath: RoutePath | null;
   workspaceName: string;
   jobFunction: string;
@@ -57,6 +74,9 @@ export interface Profile {
 
 export interface SessionProgress {
   ingested: boolean;
+  /** A sample run and an upload of your own are different steps. */
+  sampleRun: boolean;
+  uploaded: boolean;
   reviewed: boolean;
   completed: boolean;
   invited: boolean;
@@ -70,7 +90,9 @@ interface Store {
   profile: Profile;
   signUp: (method: SignupMethod, firstName: string, lastName: string, email: string) => void;
   /** Routing resolves at authentication (Signup PRD §3), before the profile screen. */
-  joinWorkspace: (name: string, autoApprove: boolean) => void;
+  /** Arriving on an invite link, which skips routing entirely. */
+  acceptInvite: (firstName: string, lastName: string, email: string) => void;
+  joinWorkspace: (name: string, visibility: WorkspaceVisibility) => void;
   createOwnWorkspace: () => void;
   submitProfile: (jobFunction: string, country: string) => void;
 
@@ -88,10 +110,45 @@ interface Store {
   members: Member[];
   memory: MemoryPattern[];
 
+  /** State rather than a constant, so a scenario can make them all private. */
+  discoverableWorkspaces: DiscoverableWorkspace[];
+
+  documents: IndexedDocument[];
+  addDocument: () => void;
+  removeDocument: (id: string) => void;
+
+  /** The last invoice opened, so a return visit can offer to resume it. */
+  lastOpenedInvoiceId: string | null;
+
+  /** Demo aid. See scenarios.ts. */
+  applyScenario: (id: ScenarioId) => void;
+
+  /** Who can join the workspace you are in. Public by default. */
+  workspaceVisibility: WorkspaceVisibility;
+  setWorkspaceVisibility: (visibility: WorkspaceVisibility) => void;
+
   chat: ChatTurn[];
   pushChat: (turns: ChatTurn[]) => void;
+  /** Back to the landing state, with the thread cleared. */
+  clearChat: () => void;
+  /** The Ask Neo panel, which opens over whatever screen you are on. */
+  askNeoOpen: boolean;
+  askNeoInvoiceId: string | null;
+  /** A question the panel could not answer, carried to the full page. */
+  handoffQuestion: string | null;
+  takeToFullPage: (question: string) => void;
+  clearHandoff: () => void;
+  openAskNeo: (invoiceId?: string | null) => void;
+  closeAskNeo: () => void;
+  panelChat: ChatTurn[];
+  pushPanelChat: (turns: ChatTurn[]) => void;
   visitedAskNeo: boolean;
-  markAskNeoVisited: () => void;
+  /**
+   * Which landing the Ask Neo page should show. Decided when the screen is
+   * entered rather than inside the page: the page does not remount on every
+   * arrival, so a value it captured once would go stale.
+   */
+  landingMode: 'first' | 'return';
 
   activity: AuditEntry[];
   progress: SessionProgress;
@@ -116,6 +173,8 @@ interface Store {
   /* Ingestion */
   runSamples: () => void;
   uploadInvoice: () => void;
+  /** Files the user actually chose, classified in the upload dialog. */
+  ingestUpload: (files: { name: string; kind: DocumentKind }[]) => void;
 
   /* People */
   inviteMember: (email: string, invoiceProcessing: WorkflowRole, agenticSearch: WorkflowRole) => void;
@@ -139,6 +198,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     lastName: '',
     email: '',
     method: null,
+    domainVerdict: null,
+    domain: '',
     routePath: null,
     workspaceName: '',
     jobFunction: '',
@@ -154,12 +215,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [connections, setConnections] = React.useState<Connections>(DEFAULT_CONNECTIONS);
   const [members, setMembers] = React.useState<Member[]>(MEMBERS);
   const [memory, setMemory] = React.useState<MemoryPattern[]>(MEMORY_PATTERNS);
+  const [workspaceVisibility, setVisibility] = React.useState<WorkspaceVisibility>('public');
   const [chat, setChat] = React.useState<ChatTurn[]>([]);
+  const [panelChat, setPanelChat] = React.useState<ChatTurn[]>([]);
+  const [askNeoOpen, setAskNeoOpen] = React.useState(false);
+  const [askNeoInvoiceId, setAskNeoInvoiceId] = React.useState<string | null>(null);
+  const [handoffQuestion, setHandoffQuestion] = React.useState<string | null>(null);
+  const [documents, setDocuments] = React.useState<IndexedDocument[]>(INDEXED_DOCUMENTS);
+  const [documentBatch, setDocumentBatch] = React.useState(0);
+  const [lastOpenedInvoiceId, setLastOpenedInvoiceId] = React.useState<string | null>(null);
+  const [discoverableWorkspaces, setDiscoverableWorkspaces] =
+    React.useState<DiscoverableWorkspace[]>(DISCOVERABLE_WORKSPACES);
   const [visitedAskNeo, setVisitedAskNeo] = React.useState(false);
+  const [landingMode, setLandingMode] = React.useState<'first' | 'return'>('first');
   const [sampleBatch, setSampleBatch] = React.useState(0);
   const [uploadBatch, setUploadBatch] = React.useState(0);
   const [progress, setProgress] = React.useState<SessionProgress>({
     ingested: false,
+    sampleRun: false,
+    uploaded: false,
     reviewed: false,
     completed: false,
     invited: false,
@@ -197,17 +271,36 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     { at: stamp(), actor: who, action, detail },
   ];
 
+  /**
+   * Navigation. Arriving at Ask Neo decides which landing to show, so the page
+   * itself never has to work it out.
+   */
+  const goTo = React.useCallback(
+    (next: Screen) => {
+      if (next === 'ask-neo') {
+        setLandingMode((previous) => {
+          void previous;
+          return visitedAskNeo ? 'return' : 'first';
+        });
+        setVisitedAskNeo(true);
+      }
+      setScreen(next);
+    },
+    [visitedAskNeo],
+  );
+
   /* ── Onboarding ─────────────────────────────────────────────────────── */
 
   const signUp = React.useCallback<Store['signUp']>((method, firstName, lastName, email) => {
-    const domain = email.split('@')[1]?.toLowerCase() ?? '';
-    const publicDomains = ['gmail.com', 'outlook.com', 'hotmail.com', 'yahoo.com', 'icloud.com'];
-    const isPublic = publicDomains.includes(domain);
+    const { verdict, domain } = readDomain(email);
 
-    // A public domain is never a join key, so it can only form its own tenant.
-    // Every other domain in this prototype matches the existing Neoflo tenant,
-    // which is what puts the routing screen on the path.
-    const matchesTenant = !isPublic;
+    // A personal address cannot form or join a tenant, because a tenant is keyed
+    // on a company domain. The form blocks this before it gets here; refusing
+    // again keeps the rule in one place that cannot be bypassed.
+    if (verdict === 'personal-provider') return;
+
+    // Only an existing tenant can offer workspaces. The first person from a
+    // domain has nothing to be shown: their tenant does not exist until now.
 
     setProfile((previous) => ({
       ...previous,
@@ -215,28 +308,51 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       firstName,
       lastName,
       email,
-      routePath: matchesTenant ? null : 'first-of-domain',
-      workspaceName: matchesTenant ? '' : `${firstName}'s workspace`,
+      domainVerdict: verdict,
+      domain,
+      routePath: verdict === 'existing-tenant' ? null : 'first-of-domain',
+      // Named after the user, and renameable at any time (Signup PRD §4).
+      workspaceName: verdict === 'existing-tenant' ? '' : `${firstName}'s workspace`,
       pendingRequestFor: null,
     }));
 
-    if (matchesTenant) {
+    if (verdict === 'existing-tenant') {
+      // Either a list to choose from, or an honest empty state saying the
+      // organization exists but nothing is open to join.
       setScreen('routing');
     } else {
-      // No domain match: tenant, workspace and membership are created here, in
-      // one transaction, with no name requested (Signup PRD §4).
+      // Tenant, workspace and membership are created here in one transaction,
+      // with no name requested.
       setScreen('profile');
     }
   }, []);
 
-  const joinWorkspace = React.useCallback<Store['joinWorkspace']>((name, autoApprove) => {
+  /** Arriving on an invite link: no routing, and the role comes with it. */
+  const acceptInvite = React.useCallback<Store['acceptInvite']>((firstName, lastName, email) => {
+    setProfile((previous) => ({
+      ...previous,
+      method: 'password',
+      firstName,
+      lastName,
+      email,
+      domainVerdict: 'existing-tenant',
+      domain: (email.split('@')[1] ?? '').toLowerCase(),
+      routePath: 'invited',
+      workspaceName: PENDING_INVITE.workspaceName,
+      pendingRequestFor: null,
+    }));
+    setScreen('profile');
+  }, []);
+
+  const joinWorkspace = React.useCallback<Store['joinWorkspace']>((name, visibility) => {
+    const instant = visibility === 'public';
     setProfile((previous) => ({
       ...previous,
       routePath: 'joined',
-      // Auto-approve off never blocks: a workspace is provisioned now and the
-      // request goes to the owner (Signup PRD §7).
-      workspaceName: autoApprove ? name : `${previous.firstName}'s workspace`,
-      pendingRequestFor: autoApprove ? null : name,
+      // A workspace that needs approval never blocks: one is provisioned now and
+      // the request goes to its owner (Signup PRD §7).
+      workspaceName: instant ? name : `${previous.firstName}'s workspace`,
+      pendingRequestFor: instant ? null : name,
     }));
     setScreen('profile');
   }, []);
@@ -255,6 +371,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     (jobFunction, country) => {
       setProfile((previous) => ({ ...previous, jobFunction, country, onboarded: true }));
       log('Signed up', `Workspace created. Tenant country set to ${country}.`);
+      setLandingMode('first');
+      setVisitedAskNeo(true);
       setScreen('ask-neo');
     },
     [log],
@@ -496,7 +614,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
                   at: stamp(),
                   actor,
                   action: 'Included in a bulk download',
-                  detail: 'Still open — a download does not close an invoice that has not cleared matching.',
+                  detail: 'Still open. A download does not close an invoice that has not cleared matching.',
                 },
               ],
             };
@@ -559,7 +677,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             grnFields: [
               { key: 'grnNumber', label: 'GRN number', value: `GRN-US-${invoice.number.replace(/\D/g, '').slice(-5)}`, confidence: 93, acknowledged: false, mandatory: true, learnable: false },
               { key: 'grnPoRef', label: 'PO reference', value: invoice.poNumber ?? '—', confidence: 96, acknowledged: false, mandatory: true, learnable: false },
-              { key: 'grnDate', label: 'Receipt date', value: '18 Aug 2026', confidence: 91, acknowledged: false, mandatory: true, learnable: false },
+              { key: 'grnDate', label: 'Receipt date', value: formatDate(at(2)), confidence: 91, acknowledged: false, mandatory: true, learnable: false },
             ],
             // The receipt matches what was ordered.
             lines: invoice.lines.map((l) => ({ ...l, grnQty: l.poQty })),
@@ -612,7 +730,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           if (streak === config.memoryThreshold) {
             log('Memory formed', `${pattern.field} · ${pattern.patternKey} → ${pattern.suggestedValue}`);
           }
-          return { ...pattern, streak, lastSeen: '19 Aug 2026' };
+          return { ...pattern, streak, lastSeen: now() };
         }),
       );
       setProgress((p) => ({ ...p, reviewed: true }));
@@ -638,7 +756,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       ...previous,
     ]);
     log('Sample set run', 'Three invoices: a clean match, a line variance, and a duplicate of the first');
-    setProgress((p) => ({ ...p, ingested: true }));
+    setProgress((p) => ({ ...p, ingested: true, sampleRun: true }));
   }, [sampleBatch, log]);
 
   const uploadInvoice = React.useCallback<Store['uploadInvoice']>(() => {
@@ -647,8 +765,78 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const built = buildUpload(batch);
     setInvoices((previous) => [built, ...previous]);
     log('Invoice uploaded', `${built.number} with its PO and GRN`);
-    setProgress((p) => ({ ...p, ingested: true }));
+    setProgress((p) => ({ ...p, ingested: true, uploaded: true }));
   }, [uploadBatch, log]);
+
+  /**
+   * Turn the files the user picked into records. One invoice per file they
+   * classified as an invoice; everything else is attached or held on the upload.
+   */
+  const ingestUpload = React.useCallback<Store['ingestUpload']>(
+    (files) => {
+      if (files.length === 0) return;
+      const batch = uploadBatch + 1;
+      setUploadBatch(batch);
+      const sourceId = `src-upload-${batch}`;
+
+      const invoiceFiles = files.filter((f) => f.kind === 'invoice');
+      const poFile = files.find((f) => f.kind === 'po')?.name;
+      const grnFile = files.find((f) => f.kind === 'grn')?.name;
+      const attachments = files
+        .filter((f) => f.kind === 'tax' || f.kind === 'supporting')
+        .map((f) => ({
+          name: f.name,
+          kind: (f.kind === 'tax' ? 'Tax document' : 'Supporting document') as
+            | 'Tax document'
+            | 'Supporting document',
+        }));
+
+      // Documents with no invoice among them are held on the source, not lost.
+      const held = invoiceFiles.length === 0 ? files.map((f) => f.name) : [];
+
+      setSources((previous) => [
+        {
+          id: sourceId,
+          kind: 'Upload',
+          label:
+            files.length === 1
+              ? files[0].name
+              : `${files.length} documents · ${files[0].name} and ${files.length - 1} more`,
+          arrivedAt: now(),
+          heldDocuments: held,
+        },
+        ...previous,
+      ]);
+
+      if (invoiceFiles.length > 0) {
+        const built = invoiceFiles.map((file, index) =>
+          buildFromUpload({
+            invoiceFile: file.name,
+            poFile,
+            grnFile,
+            attachments,
+            sourceId,
+            index,
+            connections,
+          }),
+        );
+        setInvoices((previous) => [...built, ...previous]);
+        log(
+          'Documents uploaded',
+          `${files.length} files, ${built.length} invoice${built.length === 1 ? '' : 's'} created`,
+        );
+        setProgress((p) => ({ ...p, ingested: true, uploaded: true }));
+        // Land on the first one, since that is what they came to do.
+        setOpenInvoiceId(built[0].id);
+        setLastOpenedInvoiceId(built[0].id);
+        setScreen('invoice');
+      } else {
+        log('Documents uploaded', `${files.length} files held, no invoice among them`);
+        setScreen('queue');
+      }
+    },
+    [uploadBatch, log, connections],
+  );
 
   /* ── People ─────────────────────────────────────────────────────────── */
 
@@ -715,23 +903,375 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [members, log],
   );
 
+  /**
+   * These are referenced in consumers' useMemo deps, most importantly the
+   * DataGrid's column definitions. A fresh arrow on every render invalidates
+   * those memos and makes the grid re-initialise, which is a visible pause.
+   */
+  const openInvoice = React.useCallback((id: string) => {
+    setOpenInvoiceId(id);
+    setLastOpenedInvoiceId(id);
+    setScreen('invoice');
+  }, []);
+
+  const pushChat = React.useCallback(
+    (turns: ChatTurn[]) => setChat((previous) => [...previous, ...turns]),
+    [],
+  );
+  const clearChat = React.useCallback(() => setChat([]), []);
+  const pushPanelChat = React.useCallback(
+    (turns: ChatTurn[]) => setPanelChat((previous) => [...previous, ...turns]),
+    [],
+  );
+  const openAskNeo = React.useCallback((invoiceId: string | null = null) => {
+    setAskNeoInvoiceId((previous) => {
+      if (previous !== invoiceId) setPanelChat([]);
+      return invoiceId;
+    });
+    setAskNeoOpen(true);
+  }, []);
+  const closeAskNeo = React.useCallback(() => setAskNeoOpen(false), []);
+  const takeToFullPage = React.useCallback((question: string) => {
+    setAskNeoOpen(false);
+    setHandoffQuestion(question);
+    setScreen('ask-neo');
+  }, []);
+  const clearHandoff = React.useCallback(() => setHandoffQuestion(null), []);
+  const dismissChecklist = React.useCallback(
+    () => setProgress((p) => ({ ...p, checklistDismissed: true })),
+    [],
+  );
+
+  /* ── Demo scenarios ─────────────────────────────────────────────────── */
+
+  /**
+   * Puts the app into a named state in one step. A demo aid: it writes the same
+   * state the UI would have produced, so nothing here is a special code path the
+   * product does not otherwise reach.
+   */
+  const applyScenario = React.useCallback<Store['applyScenario']>((id) => {
+    const signedIn: Profile = {
+      firstName: 'Shubham',
+      lastName: 'Shrivastava',
+      email: 'shubham.s@neoflo.ai',
+      method: 'google',
+      domainVerdict: 'existing-tenant',
+      domain: 'neoflo.ai',
+      routePath: 'joined',
+      workspaceName: 'Finance',
+      pendingRequestFor: null,
+      jobFunction: 'AP / Finance',
+      country: 'US',
+      onboarded: true,
+    };
+
+    // Everything back to the opening position before the scenario's own changes.
+    const reset = () => {
+      setInvoices(INITIAL_INVOICES);
+      setSources(SOURCES);
+      setConfig(DEFAULT_CONFIG);
+      setConnections(DEFAULT_CONNECTIONS);
+      setMembers(MEMBERS);
+      setMemory(MEMORY_PATTERNS);
+      setDocuments(INDEXED_DOCUMENTS);
+      setDiscoverableWorkspaces(DISCOVERABLE_WORKSPACES);
+      setChat([]);
+      setPanelChat([]);
+      setAskNeoOpen(false);
+      setAskNeoInvoiceId(null);
+      setHandoffQuestion(null);
+      setOpenInvoiceId(null);
+      setLastOpenedInvoiceId(null);
+      setVisibility('public');
+      setSampleBatch(0);
+      setUploadBatch(0);
+      setDocumentBatch(0);
+      setActivity([]);
+      setProgress({
+        ingested: false,
+        sampleRun: false,
+        uploaded: false,
+        reviewed: false,
+        completed: false,
+        invited: false,
+        checklistDismissed: false,
+      });
+      setVisitedAskNeo(false);
+    };
+
+    /** Land inside the app, past onboarding. */
+    const enterApp = (screen: Screen = 'queue') => {
+      setProfile(signedIn);
+      setVisitedAskNeo(true);
+      setLandingMode('return');
+      setScreen(screen);
+    };
+
+    /** Open one invoice from a given list, at the stage it is actually at. */
+    const openFrom = (list: Invoice[], invoiceId: string) => {
+      setInvoices(list);
+      setOpenInvoiceId(invoiceId);
+      setLastOpenedInvoiceId(invoiceId);
+      setScreen('invoice');
+    };
+
+    /** The three samples, with matching already run on each. */
+    const withSamples = () => {
+      const samples = buildSamples(1);
+      const all = [...samples, ...INITIAL_INVOICES];
+      return all.map((invoice) =>
+        invoice.isSample
+          ? { ...invoice, stage: 'matching' as const, matchResult: runMatching(invoice, DEFAULT_CONFIG, all) }
+          : invoice,
+      );
+    };
+
+    /** INV-88213 with its receipt supplied, so all three checks pass. */
+    const withGrnSupplied = () => {
+      const patched = INITIAL_INVOICES.map((invoice) => {
+        if (invoice.id !== 'inv-88213') return invoice;
+        return {
+          ...invoice,
+          grnSource: 'uploaded' as const,
+          grnFields: [
+            { key: 'grnNumber', label: 'GRN number', value: 'GRN-US-88213', confidence: 93, acknowledged: true, mandatory: true, learnable: false },
+            { key: 'grnPoRef', label: 'PO reference', value: 'PO-US-88213', confidence: 96, acknowledged: true, mandatory: true, learnable: false },
+            { key: 'grnDate', label: 'Receipt date', value: formatDate(at(4)), confidence: 91, acknowledged: true, mandatory: true, learnable: false },
+          ],
+          lines: invoice.lines.map((l) => ({ ...l, grnQty: l.poQty })),
+        };
+      });
+      return patched.map((invoice) =>
+        invoice.id === 'inv-88213'
+          ? { ...invoice, matchResult: runMatching(invoice, DEFAULT_CONFIG, patched) }
+          : invoice,
+      );
+    };
+
+    /** Stage the signup form with an address, so the shared step stays visible. */
+    const stageSignup = (firstName: string, lastName: string, email: string) => {
+      const { verdict, domain } = readDomain(email);
+      setProfile({
+        firstName, lastName, email,
+        method: null,
+        domainVerdict: verdict,
+        domain,
+        routePath: null,
+        workspaceName: '',
+        pendingRequestFor: null,
+        jobFunction: '',
+        country: 'US',
+        onboarded: false,
+      });
+      setScreen('signup');
+    };
+
+    reset();
+
+    switch (id) {
+      case 'reset':
+        setProfile({
+          firstName: '', lastName: '', email: '', method: null, domainVerdict: null,
+          domain: '', routePath: null, workspaceName: '', pendingRequestFor: null,
+          jobFunction: '', country: 'US', onboarded: false,
+        });
+        setScreen('signup');
+        break;
+
+      case 'signup-existing-tenant':
+        stageSignup('Shubham', 'Shrivastava', 'shubham.s@neoflo.ai');
+        break;
+
+      case 'signup-nothing-open':
+        setDiscoverableWorkspaces(DISCOVERABLE_WORKSPACES.map((w) => ({ ...w, visibility: 'private' })));
+        stageSignup('Shubham', 'Shrivastava', 'shubham.s@neoflo.ai');
+        break;
+
+      case 'signup-first-of-domain':
+        stageSignup('Ravi', 'Menon', 'ravi@acmefoods.com');
+        break;
+
+      case 'signup-personal-provider':
+        stageSignup('Shubham', 'Shrivastava', 'shubham@gmail.com');
+        break;
+
+      case 'signup-invited':
+        setProfile({
+          ...signedIn,
+          firstName: 'Priya',
+          lastName: 'Raman',
+          email: 'priya@neoflo.ai',
+          routePath: 'invited',
+          workspaceName: PENDING_INVITE.workspaceName,
+          jobFunction: '',
+          onboarded: false,
+        });
+        setScreen('profile');
+        break;
+
+      case 'landing-first-visit':
+        setProfile(signedIn);
+        setVisitedAskNeo(false);
+        setLandingMode('first');
+        setScreen('ask-neo');
+        break;
+
+      case 'landing-return':
+        enterApp('ask-neo');
+        setLandingMode('return');
+        setLastOpenedInvoiceId('inv-77120');
+        break;
+
+      case 'extraction-low-confidence':
+      case 'extraction-attachments':
+        enterApp();
+        openFrom(INITIAL_INVOICES, 'inv-77120');
+        break;
+
+      case 'matching-no-po': {
+        // No ERP, and an invoice arriving on its own: the number is on its face
+        // but there is nothing to resolve it against.
+        const offline = { ...DEFAULT_CONNECTIONS, zohoBooks: false, zohoInventory: false };
+        setConnections(offline);
+        enterApp();
+        setProgress((p) => ({ ...p, ingested: true, uploaded: true }));
+        const alone = buildFromUpload({
+          invoiceFile: 'INV-55501.pdf',
+          attachments: [],
+          sourceId: 'src-upload-alone',
+          index: 0,
+          connections: offline,
+        });
+        const cleared: Invoice = {
+          ...alone,
+          invoiceFields: alone.invoiceFields.map((f) => ({ ...f, acknowledged: true })),
+          stage: 'matching',
+        };
+        const list = [cleared, ...INITIAL_INVOICES];
+        openFrom(
+          list.map((invoice) =>
+            invoice.id === cleared.id
+              ? { ...invoice, matchResult: runMatching(invoice, DEFAULT_CONFIG, list) }
+              : invoice,
+          ),
+          cleared.id,
+        );
+        break;
+      }
+
+      case 'matching-no-grn':
+        enterApp();
+        openFrom(INITIAL_INVOICES, 'inv-88213');
+        break;
+
+      case 'matching-po-balance':
+        enterApp();
+        openFrom(INITIAL_INVOICES, 'inv-44320');
+        break;
+
+      case 'matching-duplicate':
+        enterApp();
+        setSampleBatch(1);
+        setProgress((p) => ({ ...p, ingested: true, sampleRun: true }));
+        openFrom(withSamples(), 'sample-duplicate');
+        break;
+
+      case 'matching-variance':
+        enterApp();
+        setSampleBatch(1);
+        setProgress((p) => ({ ...p, ingested: true, sampleRun: true }));
+        openFrom(withSamples(), 'sample-variance');
+        break;
+
+      case 'posting-ready': {
+        enterApp();
+        const cleared = withGrnSupplied().map((invoice) =>
+          invoice.id === 'inv-88213' ? { ...invoice, stage: 'posting' as const, status: 'ERP posting' as const } : invoice,
+        );
+        openFrom(cleared, 'inv-88213');
+        break;
+      }
+
+      case 'posting-sample-blocked': {
+        enterApp();
+        setSampleBatch(1);
+        setProgress((p) => ({ ...p, ingested: true }));
+        const list = withSamples().map((invoice) =>
+          invoice.id === 'sample-clean'
+            ? { ...invoice, stage: 'posting' as const, status: 'ERP posting' as const }
+            : invoice,
+        );
+        openFrom(list, 'sample-clean');
+        break;
+      }
+
+      case 'posting-exported':
+        enterApp();
+        openFrom(INITIAL_INVOICES, 'inv-55891');
+        break;
+
+      case 'memory-about-to-form': {
+        enterApp();
+        setUploadBatch(1);
+        setProgress((p) => ({ ...p, ingested: true, uploaded: true, reviewed: true }));
+        const uploaded = buildUpload(1);
+        // Extraction already dealt with, so the demo starts at the coding table.
+        const ready: Invoice = {
+          ...uploaded,
+          invoiceFields: uploaded.invoiceFields.map((f) => ({ ...f, acknowledged: true })),
+          poFields: uploaded.poFields.map((f) => ({ ...f, acknowledged: true })),
+          grnFields: uploaded.grnFields.map((f) => ({ ...f, acknowledged: true })),
+          stage: 'matching',
+        };
+        const list = [ready, ...INITIAL_INVOICES];
+        openFrom(
+          list.map((invoice) =>
+            invoice.id === ready.id
+              ? { ...invoice, matchResult: runMatching(invoice, DEFAULT_CONFIG, list) }
+              : invoice,
+          ),
+          ready.id,
+        );
+        break;
+      }
+
+      case 'config-drift':
+        enterApp();
+        setConfig({ ...DEFAULT_CONFIG, matchType: '2-way' });
+        openFrom(INITIAL_INVOICES, 'inv-88213');
+        break;
+
+      case 'stp-inert':
+        enterApp('workflow-config');
+        setConnections({ ...DEFAULT_CONNECTIONS, zohoBooks: false, zohoInventory: false });
+        break;
+
+      case 'queue-empty':
+        enterApp();
+        setInvoices([]);
+        setSources([]);
+        break;
+    }
+  }, []);
+
   /* ── Assembly ───────────────────────────────────────────────────────── */
 
   const value: Store = {
     screen,
-    goTo: setScreen,
+    goTo,
     profile,
     signUp,
+    acceptInvite,
     joinWorkspace,
     createOwnWorkspace,
     submitProfile,
     invoices,
     sources,
     openInvoiceId,
-    openInvoice: (id) => {
-      setOpenInvoiceId(id);
-      setScreen('invoice');
-    },
+    openInvoice,
+    lastOpenedInvoiceId,
+    applyScenario,
+    discoverableWorkspaces,
     config,
     updateConfig: (patchValue) => {
       setConfig((previous) => ({ ...previous, ...patchValue }));
@@ -746,13 +1286,45 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     },
     members,
     memory,
+    documents,
+    addDocument: () => {
+      const batch = documentBatch + 1;
+      setDocumentBatch(batch);
+      const built = buildUploadedDocument(batch);
+      setDocuments((previous) => [built, ...previous]);
+      log('Document indexed', `${built.name} · ${built.pages} pages`);
+    },
+    removeDocument: (id) => {
+      const target = documents.find((d) => d.id === id);
+      setDocuments((previous) => previous.filter((d) => d.id !== id));
+      log('Document removed', `${target?.name ?? id}. Answers stop drawing on it immediately.`);
+    },
+    workspaceVisibility,
+    setWorkspaceVisibility: (visibility) => {
+      setVisibility(visibility);
+      log('Workspace visibility changed', VISIBILITY_COPY[visibility].label);
+    },
     chat,
-    pushChat: (turns) => setChat((previous) => [...previous, ...turns]),
+    pushChat,
+    clearChat,
+    askNeoOpen,
+    askNeoInvoiceId,
+    // A panel opened from a different record starts a fresh thread, so an answer
+    // about the last invoice is never left sitting above this one.
+    openAskNeo,
+    closeAskNeo,
+    handoffQuestion,
+    // The panel could not reach far enough, so the question travels rather than
+    // making the user type it again.
+    takeToFullPage,
+    clearHandoff,
+    panelChat,
+    pushPanelChat,
     visitedAskNeo,
-    markAskNeoVisited: () => setVisitedAskNeo(true),
+    landingMode,
     activity,
     progress,
-    dismissChecklist: () => setProgress((p) => ({ ...p, checklistDismissed: true })),
+    dismissChecklist,
     editField,
     acknowledgeField,
     acknowledgeAll,
@@ -769,6 +1341,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     goBackToExtraction,
     runSamples,
     uploadInvoice,
+    ingestUpload,
     inviteMember,
     setMemberRole,
     toggleSuspend,

@@ -3,7 +3,6 @@ import {
   Alert,
   Box,
   Button,
-  Card,
   Chip,
   DataGrid,
   Divider,
@@ -32,23 +31,13 @@ import { Filter } from '@neofloai/atoms';
 import { useStore } from '../store';
 import { EmptyState, SourceChip, StatusChip } from '../components/common';
 import { ShellBar } from '../components/shell';
+import { UploadDialog } from '../components/UploadDialog';
 import { buildCsv, downloadCsv, money, unacknowledgedFields } from '../engine';
-import type { Invoice } from '../types';
+import { ageInDays, formatDate } from '../clock';
+import type { Invoice, InvoiceStatus } from '../types';
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** "17 Aug 2026, 09:19" → days before 19 Aug 2026. */
-function ageInDays(stampText: string): number {
-  const match = /^(\d{1,2}) (\w{3}) (\d{4})/.exec(stampText);
-  if (!match) return 0;
-  const day = Number(match[1]);
-  const month = MONTHS.indexOf(match[2]);
-  const year = Number(match[3]);
-  if (month < 0) return 0;
-  const then = Date.UTC(year, month, day);
-  const now = Date.UTC(2026, 7, 19);
-  return Math.max(0, Math.round((now - then) / 86_400_000));
-}
+const CLOSED_STATUSES: InvoiceStatus[] = ['Posted', 'Exported', 'Rejected'];
+const OPEN_STATUSES: InvoiceStatus[] = ['Action Required', 'Extraction', 'Matching', 'ERP posting'];
 
 export function QueueScreen() {
   const {
@@ -58,15 +47,15 @@ export function QueueScreen() {
     connections,
     openInvoice,
     runSamples,
-    uploadInvoice,
     markExported,
   } = useStore();
 
-  const [tab, setTab] = React.useState<'invoices' | 'sources'>('invoices');
+  const [tab, setTab] = React.useState<'open' | 'closed'>('open');
   const [search, setSearch] = React.useState('');
   const [selection, setSelection] = React.useState<FilterValue>({});
   const [filterAnchor, setFilterAnchor] = React.useState<HTMLElement | null>(null);
   const [addAnchor, setAddAnchor] = React.useState<HTMLElement | null>(null);
+  const [uploadOpen, setUploadOpen] = React.useState(false);
 
   const vendors = React.useMemo(
     () => [...new Set(invoices.map((i) => i.vendor))].sort(),
@@ -79,15 +68,11 @@ export function QueueScreen() {
         id: 'status',
         label: 'Status',
         disableSearch: true,
-        options: [
-          { value: 'Action Required', label: <Chip size="sm" variant="warning" label="Action Required" />, searchText: 'Action Required' },
-          { value: 'Extraction', label: <Chip size="sm" variant="information" label="Extraction" />, searchText: 'Extraction' },
-          { value: 'Matching', label: <Chip size="sm" variant="information" label="Matching" />, searchText: 'Matching' },
-          { value: 'ERP posting', label: <Chip size="sm" variant="primary" label="ERP posting" />, searchText: 'ERP posting' },
-          { value: 'Posted', label: <Chip size="sm" variant="success" label="Posted" />, searchText: 'Posted' },
-          { value: 'Exported', label: <Chip size="sm" variant="purple" label="Exported" />, searchText: 'Exported' },
-          { value: 'Rejected', label: <Chip size="sm" variant="error" label="Rejected" />, searchText: 'Rejected' },
-        ],
+        options: (tab === 'open' ? OPEN_STATUSES : CLOSED_STATUSES).map((status) => ({
+          value: status,
+          label: <StatusChip status={status} />,
+          searchText: status,
+        })),
       },
       {
         id: 'source',
@@ -115,7 +100,7 @@ export function QueueScreen() {
         options: vendors.map((v) => ({ value: v, label: v, searchText: v })),
       },
     ],
-    [vendors],
+    [vendors, tab],
   );
 
   const activeCount = countActiveFilters(groups, selection);
@@ -124,6 +109,10 @@ export function QueueScreen() {
   const rows = React.useMemo(() => {
     const query = search.trim().toLowerCase();
     return invoices.filter((invoice) => {
+      const closed = CLOSED_STATUSES.includes(invoice.status);
+      if (tab === 'open' && closed) return false;
+      if (tab === 'closed' && !closed) return false;
+
       if (query !== '') {
         const haystack = [invoice.number, invoice.vendor, invoice.poNumber ?? '', invoice.status]
           .join(' ')
@@ -150,7 +139,7 @@ export function QueueScreen() {
 
       return true;
     });
-  }, [invoices, search, selection]);
+  }, [invoices, search, selection, tab]);
 
   const columns = React.useMemo(
     () => [
@@ -164,7 +153,7 @@ export function QueueScreen() {
               {row.number}
             </Typography>
             <Typography variant="caption" color="text.secondary" noWrap>
-              {row.invoiceDate} · {ageInDays(row.ingestedAt)}d old
+              {formatDate(row.invoiceDate)} · {ageInDays(row.ingestedAt)}d old
             </Typography>
           </Stack>
         ),
@@ -255,6 +244,18 @@ export function QueueScreen() {
     [config.matchType, config.confidenceThreshold, openInvoice],
   );
 
+  /**
+   * A bundle that arrived with no invoice among it is the one thing an invoice
+   * row cannot lead you to, so it is surfaced here and only when it exists.
+   * Everything else about a source belongs on the invoice that came from it.
+   */
+  const heldDocuments = React.useMemo(
+    () => sources.flatMap((source) => source.heldDocuments),
+    [sources],
+  );
+
+  const openCount = invoices.filter((i) => !CLOSED_STATUSES.includes(i.status)).length;
+  const closedCount = invoices.length - openCount;
   const needsMe = invoices.filter((i) => i.status === 'Action Required').length;
 
   const exportFiltered = () => {
@@ -293,168 +294,139 @@ export function QueueScreen() {
                 Invoices
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {invoices.length} records ·{' '}
                 {needsMe > 0
-                  ? `${needsMe} need you`
-                  : 'nothing needs you'}{' '}
-                · an invoice moves through any stage needing nothing from you and surfaces at the
-                first one that does
+                  ? `${needsMe} of ${openCount} open ${openCount === 1 ? 'invoice needs' : 'invoices need'} you.`
+                  : `${openCount} open, and nothing needs you.`}{' '}
+                
               </Typography>
             </Stack>
           </Stack>
         </Box>
 
         <Box sx={{ px: 3 }}>
-          <Tabs value={tab} onChange={(_, next) => setTab(next)} aria-label="Queue views">
-            <Tab label="Invoices" value="invoices" count={invoices.length} />
-            <Tab label="Sources" value="sources" count={sources.length} />
+          <Tabs value={tab} onChange={(_, next) => setTab(next)} aria-label="Open or closed invoices">
+            <Tab label="Open" value="open" count={openCount} />
+            <Tab label="Closed" value="closed" count={closedCount} />
           </Tabs>
         </Box>
 
-        {tab === 'invoices' ? (
-          <>
-            <Stack
-              direction="row"
-              sx={{ px: 3, py: 2, gap: 1.5, alignItems: 'center', justifyContent: 'space-between' }}
+        {heldDocuments.length > 0 && (
+          <Box sx={{ px: 3, pt: 1 }}>
+            <Alert
+              severity="warning"
+              title={`${heldDocuments.length} document${heldDocuments.length === 1 ? '' : 's'} arrived without an invoice`}
             >
-              <TextField
-                placeholder="Search invoice, vendor or PO…"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                startAdornment={<MagnifyingGlassIcon size={16} />}
-                sx={{ width: 300 }}
-              />
-              <Stack direction="row" sx={{ gap: 1 }}>
+              {heldDocuments.join(', ')}. Nothing is waiting in the queue. A purchase order among them
+              can be attached to a later invoice.
+            </Alert>
+          </Box>
+        )}
+
+        <Stack
+          direction="row"
+          sx={{ px: 3, py: 2, gap: 1.5, alignItems: 'center', justifyContent: 'space-between' }}
+        >
+          <TextField
+            placeholder="Search invoice, vendor or PO…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            startAdornment={<MagnifyingGlassIcon size={16} />}
+            sx={{ width: 300 }}
+          />
+          <Stack direction="row" sx={{ gap: 1 }}>
+            <Button
+              variant="secondary"
+              appearance="outline"
+              disabled={!isFiltered}
+              onClick={() => {
+                setSelection({});
+                setSearch('');
+              }}
+              sx={{ whiteSpace: 'nowrap' }}
+            >
+              Clear filters
+            </Button>
+            <Button
+              variant="secondary"
+              appearance="outline"
+              startIcon={<FadersHorizontalIcon />}
+              onClick={(event) => setFilterAnchor(event.currentTarget)}
+              sx={{ whiteSpace: 'nowrap' }}
+            >
+              Filter
+              {activeCount > 0 && (
+                <Chip size="sm" variant="primary" component="span" label={activeCount} />
+              )}
+            </Button>
+          </Stack>
+        </Stack>
+        <Divider />
+
+        {rows.length === 0 ? (
+          <EmptyState
+            icon={<FilesIcon size={40} />}
+            title={
+              isFiltered
+                ? 'Nothing matches those filters'
+                : tab === 'closed'
+                  ? 'Nothing has closed yet'
+                  : 'Nothing open'
+            }
+            description={
+              isFiltered
+                ? 'Clear the filters to see the rest of the queue.'
+                : tab === 'closed'
+                  ? 'Posted, exported and rejected invoices collect here.'
+                  : 'Upload an invoice with its purchase order and receipt, or run a sample set to see how it works.'
+            }
+            action={
+              isFiltered ? (
                 <Button
                   variant="secondary"
                   appearance="outline"
-                  disabled={!isFiltered}
                   onClick={() => {
                     setSelection({});
                     setSearch('');
                   }}
                 >
-                  Clear Filters
+                  Clear filters
                 </Button>
-                <Button
-                  variant="secondary"
-                  appearance="outline"
-                  startIcon={<FadersHorizontalIcon />}
-                  onClick={(event) => setFilterAnchor(event.currentTarget)}
-                >
-                  Filter
-                  {activeCount > 0 && (
-                    <Chip size="sm" variant="primary" component="span" label={activeCount} />
-                  )}
-                </Button>
-              </Stack>
-            </Stack>
-            <Divider />
-
-            {/* A definite height for the grid to be 100% of. */}
-            <Box sx={{ flex: 1, minHeight: 0 }}>
-              <DataGrid
-                size="sm"
-                rows={rows}
-                columns={columns}
-                rowNoun="invoices"
-                pagination
-                pageSizeOptions={[10, 25, 50]}
-                initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
-                rowState={({ row }: { row: Invoice }) => {
-                  if (row.status === 'Rejected') return 'disabled';
-                  if (row.status === 'Action Required') return 'error';
-                  if (row.status === 'Posted' || row.status === 'Exported') return 'success';
-                  return undefined;
-                }}
-                onRowClick={({ row }: { row: Invoice }) => openInvoice(row.id)}
-              />
-            </Box>
-          </>
-        ) : (
-          <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 3, py: 3 }}>
-            <Stack sx={{ gap: 2 }}>
-              <Alert severity="info" title="One upload or one email is a source">
-                A source may carry many documents — several invoices, their POs, GRNs and supporting
-                files. Each invoice becomes its own record and is processed independently. A source
-                shows a count, not a rolled-up status.
-              </Alert>
-
-              {sources.map((source) => {
-                const theirs = invoices.filter((i) => i.sourceId === source.id);
-                const attention = theirs.filter((i) => i.status === 'Action Required').length;
-                return (
-                  <Card key={source.id} component="article">
-                    <Stack sx={{ p: 2, gap: 1.5 }}>
-                      <Stack direction="row" sx={{ gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <SourceChip kind={source.kind} />
-                        <Typography variant="body2" weight="medium" sx={{ flex: 1, minWidth: 200 }}>
-                          {source.label}
-                        </Typography>
-                        {theirs.length > 0 && (
-                          <Chip
-                            size="sm"
-                            variant={attention > 0 ? 'warning' : 'success'}
-                            label={
-                              attention > 0
-                                ? `${attention} of ${theirs.length} need attention`
-                                : `${theirs.length} processed`
-                            }
-                          />
-                        )}
-                      </Stack>
-                      <Typography variant="caption" color="text.secondary">
-                        Arrived {source.arrivedAt}
-                      </Typography>
-
-                      {source.heldDocuments.length > 0 && (
-                        <Alert severity="warning" title="Held on the source">
-                          {source.heldDocuments.join(', ')} — no invoice was found among these, so no
-                          record was created. They stay attachable to a later invoice in this
-                          workspace.
-                        </Alert>
-                      )}
-
-                      {theirs.length > 0 && (
-                        <Stack direction="row" sx={{ gap: 0.75, flexWrap: 'wrap' }}>
-                          {theirs.map((invoice) => (
-                            <Chip
-                              key={invoice.id}
-                              size="sm"
-                              variant="secondary"
-                              label={invoice.number}
-                              onClick={() => openInvoice(invoice.id)}
-                            />
-                          ))}
-                        </Stack>
-                      )}
-                    </Stack>
-                  </Card>
-                );
-              })}
-            </Stack>
-          </Box>
-        )}
-
-        {tab === 'invoices' && rows.length === 0 && (
-          <EmptyState
-            icon={<FilesIcon size={40} />}
-            title={isFiltered ? 'Nothing matches those filters' : 'No invoices yet'}
-            description={
-              isFiltered
-                ? 'Clear the filters to see the whole queue.'
-                : 'Upload an invoice with its PO and GRN, let Neoflo read your nominated mailbox folder, or run the pre-computed sample set for your country.'
-            }
-            action={
-              isFiltered ? (
-                <Button variant="secondary" appearance="outline" onClick={() => { setSelection({}); setSearch(''); }}>
-                  Clear Filters
+              ) : tab === 'closed' ? (
+                <Button variant="secondary" appearance="outline" onClick={() => setTab('open')}>
+                  Go to the open queue
                 </Button>
               ) : (
-                <Button onClick={runSamples}>Run a sample</Button>
+                <Stack direction="row" sx={{ gap: 1.5 }}>
+                  <Button startIcon={<UploadSimpleIcon size={16} />} onClick={() => setUploadOpen(true)}>
+                    Upload documents
+                  </Button>
+                  <Button variant="secondary" appearance="outline" onClick={runSamples}>
+                    Run a sample
+                  </Button>
+                </Stack>
               )
             }
           />
+        ) : (
+          /* A definite height for the grid to be 100% of. */
+          <Box sx={{ flex: 1, minHeight: 0 }}>
+            <DataGrid
+              size="sm"
+              rows={rows}
+              columns={columns}
+              rowNoun="invoices"
+              pagination
+              pageSizeOptions={[10, 25, 50]}
+              initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
+              rowState={({ row }: { row: Invoice }) => {
+                if (row.status === 'Rejected') return 'disabled';
+                if (row.status === 'Action Required') return 'error';
+                if (row.status === 'Posted' || row.status === 'Exported') return 'success';
+                return undefined;
+              }}
+              onRowClick={({ row }: { row: Invoice }) => openInvoice(row.id)}
+            />
+          </Box>
         )}
       </Stack>
 
@@ -469,6 +441,8 @@ export function QueueScreen() {
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       />
 
+      <UploadDialog open={uploadOpen} onClose={() => setUploadOpen(false)} />
+
       <Menu
         anchorEl={addAnchor}
         open={Boolean(addAnchor)}
@@ -480,17 +454,17 @@ export function QueueScreen() {
         <MenuItem
           onClick={() => {
             setAddAnchor(null);
-            uploadInvoice();
+            setUploadOpen(true);
           }}
         >
           <UploadSimpleIcon size={16} />
-          Upload — invoice, PO and GRN together
+          Upload invoice and documents
         </MenuItem>
         <MenuItem disabled>
           <EnvelopeSimpleIcon size={16} />
           {connections.mailboxProvider
-            ? `Mailbox — reading ${connections.mailboxFolder}`
-            : 'Mailbox — not connected'}
+            ? `Mailbox: reading ${connections.mailboxFolder}`
+            : 'Mailbox: not connected'}
         </MenuItem>
         <Divider />
         <MenuItem
@@ -501,7 +475,7 @@ export function QueueScreen() {
           }}
         >
           <SparkleIcon size={16} />
-          Run a sample — three US invoices with POs and GRNs
+          Run a sample set
         </MenuItem>
       </Menu>
     </>

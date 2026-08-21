@@ -16,28 +16,35 @@ import {
   Navbar,
   NavbarTitle,
   NeofloLogo,
+  Radio,
+  RadioGroup,
   Stack,
   TextField,
   ToggleButton,
+  Typography,
   Tooltip,
 } from '@neofloai/atoms';
 import {
+  BuildingsIcon,
   CaretUpDownIcon,
   ChatCircleIcon,
   ChartLineIcon,
+  FadersHorizontalIcon,
   FilesIcon,
-  GearSixIcon,
-  PlugsConnectedIcon,
   PlusIcon,
   SidebarSimpleIcon,
   SignOutIcon,
+  SparkleIcon,
   SuitcaseSimpleIcon,
   UsersThreeIcon,
 } from '@neofloai/atoms/icons';
 import { NAVBAR_META_ICON_PX as META_PX } from '@neofloai/atoms';
+import { VISIBILITY_COPY } from '../data';
 import { useStore } from '../store';
+import { AskNeoPanel } from './AskNeoPanel';
+import { useRailHasRoom, useSideBySide } from './layout';
 import { ColorModeToggle } from './common';
-import type { Screen } from '../types';
+import type { Screen, WorkspaceVisibility } from '../types';
 
 /** Gutter the rail's blocks stretch between. Expanded only. */
 const RAIL_GUTTER_PX = 16;
@@ -50,9 +57,14 @@ const NAV: { key: Screen; label: string; Icon: React.ComponentType<{ size?: numb
   { key: 'members', label: 'Members', Icon: UsersThreeIcon },
 ];
 
+/**
+ * Two levels of settings, and they are genuinely different things. Integrations
+ * belong to the workspace, which is where an entity and its ERP connection live.
+ * Match type and tolerances belong to the workflow.
+ */
 const FOOTER_NAV: typeof NAV = [
-  { key: 'config', label: 'Configuration', Icon: GearSixIcon },
-  { key: 'connections', label: 'Connections', Icon: PlugsConnectedIcon },
+  { key: 'workspace-config', label: 'Workspace', Icon: BuildingsIcon },
+  { key: 'workflow-config', label: 'Workflow', Icon: FadersHorizontalIcon },
 ];
 
 interface ShellState {
@@ -115,6 +127,8 @@ function NavRail() {
   const [userAnchor, setUserAnchor] = React.useState<HTMLElement | null>(null);
   const [newWorkspaceOpen, setNewWorkspaceOpen] = React.useState(false);
   const [newName, setNewName] = React.useState('');
+  // Public by default, so a colleague who signs up lands somewhere useful.
+  const [newVisibility, setNewVisibility] = React.useState<WorkspaceVisibility>('public');
 
   const needsMe = invoices.filter((i) => i.status === 'Action Required').length;
   const block = {
@@ -252,7 +266,10 @@ function NavRail() {
         <MenuItem onClick={() => { setUserAnchor(null); goTo('members'); }}>
           Members and roles
         </MenuItem>
-        <MenuItem onClick={() => { setUserAnchor(null); goTo('config'); }}>
+        <MenuItem onClick={() => { setUserAnchor(null); goTo('workspace-config'); }}>
+          Workspace configuration
+        </MenuItem>
+        <MenuItem onClick={() => { setUserAnchor(null); goTo('workflow-config'); }}>
           Workflow configuration
         </MenuItem>
         <Divider />
@@ -271,14 +288,38 @@ function NavRail() {
           Create a workspace
         </DialogTitle>
         <DialogContent>
-          <TextField
-            label="Workspace name"
-            placeholder="AP — North America"
-            value={newName}
-            onChange={(event) => setNewName(event.target.value)}
-            helperText="Must be unique within your organisation."
-            fullWidth
-          />
+          <Stack sx={{ gap: 3 }}>
+            <TextField
+              label="Workspace name"
+              placeholder="AP North America"
+              value={newName}
+              onChange={(event) => setNewName(event.target.value)}
+              helperText="Must be unique within your organization."
+              fullWidth
+            />
+
+            <Stack sx={{ gap: 1 }}>
+              <Typography variant="body2" weight="medium">
+                Who can join
+              </Typography>
+              <RadioGroup
+                value={newVisibility}
+                onChange={(event) => setNewVisibility(event.target.value as WorkspaceVisibility)}
+              >
+                {(['public', 'approval', 'private'] as WorkspaceVisibility[]).map((option) => (
+                  <Stack key={option} sx={{ gap: 0, mb: 1 }}>
+                    <Radio value={option} label={VISIBILITY_COPY[option].label} />
+                    <Typography variant="caption" color="text.secondary" sx={{ ml: 3.5 }}>
+                      {VISIBILITY_COPY[option].detail}
+                    </Typography>
+                  </Stack>
+                ))}
+              </RadioGroup>
+              <Typography variant="caption" color="text.secondary">
+                You can change this at any time from Members.
+              </Typography>
+            </Stack>
+          </Stack>
         </DialogContent>
         <DialogActions>
           <Button appearance="text" variant="secondary" size="sm" onClick={() => setNewWorkspaceOpen(false)}>
@@ -290,6 +331,7 @@ function NavRail() {
             onClick={() => {
               setNewWorkspaceOpen(false);
               setNewName('');
+              setNewVisibility('public');
             }}
           >
             Create workspace
@@ -301,14 +343,60 @@ function NavRail() {
 }
 
 /**
+ * The Ask Neo trigger, present on every screen because a question occurs to you
+ * while you are working rather than after you have navigated somewhere else.
+ *
+ * The label says what it will do here, not just the product name: the rail
+ * already has an "Ask Neo" destination, and two controls with one label doing
+ * two different things is worse than a longer label.
+ */
+function AskNeoButton({ invoiceId, label }: { invoiceId?: string | null; label: string }) {
+  const { openAskNeo } = useStore();
+  return (
+    <Button
+      variant="primary"
+      appearance="outline"
+      size="sm"
+      startIcon={<SparkleIcon size={16} />}
+      onClick={() => openAskNeo(invoiceId ?? null)}
+    >
+      {label}
+    </Button>
+  );
+}
+
+/**
  * The shell: the rail owns the full height and the bar starts where the rail
  * ends, so the outer box is a row — rail, then a column.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const [collapsed, setCollapsed] = React.useState(false);
+  const railHasRoom = useRailHasRoom();
+  const [collapsed, setCollapsed] = React.useState(() => !railHasRoom);
+  const { askNeoOpen } = useStore();
+  const sideBySide = useSideBySide();
+
+  /**
+   * Fold the rail when the window gets narrow and unfold it when there is room
+   * again. Only crossing the breakpoint moves it, so a manual toggle within one
+   * size is left alone.
+   */
+  // Follow the breakpoint, but leave a manual toggle inside one size alone.
+  React.useEffect(() => {
+    setCollapsed(!railHasRoom);
+  }, [railHasRoom]);
+
+  /**
+   * A docked panel folds the rail. The room for it comes out of the chrome
+   * rather than out of the invoice, and the rail's destinations are still there
+   * as icons. Closing the panel gives the labels back.
+   */
+  const panelDocked = askNeoOpen && sideBySide;
   const value = React.useMemo(
-    () => ({ collapsed, toggleCollapsed: () => setCollapsed((previous) => !previous) }),
-    [collapsed],
+    () => ({
+      collapsed: collapsed || panelDocked,
+      toggleCollapsed: () => setCollapsed((previous) => !previous),
+    }),
+    [collapsed, panelDocked],
   );
 
   return (
@@ -316,6 +404,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <Stack direction="row" sx={{ height: '100vh' }}>
         <NavRail />
         <Stack sx={{ flex: 1, minWidth: 0 }}>{children}</Stack>
+        <AskNeoPanel />
       </Stack>
     </ShellContext.Provider>
   );
@@ -327,6 +416,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
  */
 export function ShellBar({ children }: { children?: React.ReactNode }) {
   const { collapsed, toggleCollapsed } = React.useContext(ShellContext);
+  const { screen, askNeoOpen } = useStore();
   return (
     <Navbar>
       <IconButton
@@ -339,7 +429,16 @@ export function ShellBar({ children }: { children?: React.ReactNode }) {
         <SidebarSimpleIcon />
       </IconButton>
       <Box sx={{ flex: 1 }} />
-      <Stack direction="row" sx={{ gap: 1, alignItems: 'center' }}>
+      <Stack
+        direction="row"
+        sx={{
+          gap: 1,
+          alignItems: 'center',
+          flexShrink: 0,
+          '& .MuiButton-root': { whiteSpace: 'nowrap' },
+        }}
+      >
+        {screen !== 'ask-neo' && !askNeoOpen && <AskNeoButton label="Ask Neo" />}
         {children}
         <ColorModeToggle />
       </Stack>
@@ -356,12 +455,16 @@ export function RecordBar({
   title,
   meta,
   actions,
+  askNeoInvoiceId,
 }: {
   title: string;
   meta: { icon?: React.ReactNode; label: string }[];
   actions?: React.ReactNode;
+  /** Scopes the Ask Neo panel to the record on screen. */
+  askNeoInvoiceId?: string | null;
 }) {
   const { collapsed, toggleCollapsed } = React.useContext(ShellContext);
+  const { askNeoOpen } = useStore();
   return (
     <Navbar size="md">
       <IconButton
@@ -374,13 +477,31 @@ export function RecordBar({
         <SidebarSimpleIcon />
       </IconButton>
 
-      <NavbarTitle meta={meta} sx={{ ml: 3 }}>
+      {/* Truncates under pressure, but never below a floor: a record screen
+          whose header has lost the record is worse than a clipped label. */}
+      <NavbarTitle meta={meta} sx={{ ml: 3, minWidth: 200, overflow: 'hidden' }}>
         {title}
       </NavbarTitle>
 
-      <Box sx={{ flex: 1 }} />
+      <Box sx={{ flex: 1, minWidth: 8 }} />
 
-      <Stack direction="row" sx={{ gap: 1.5, alignItems: 'center' }}>
+      <Stack
+        direction="row"
+        sx={{
+          gap: 1.5,
+          alignItems: 'center',
+          flexShrink: 0,
+          '& .MuiButton-root': { whiteSpace: 'nowrap' },
+        }}
+      >
+        {/* Redundant while the panel is already open, and it is the longest
+            label in the bar. */}
+        {!askNeoOpen && (
+          <AskNeoButton
+            invoiceId={askNeoInvoiceId}
+            label={askNeoInvoiceId ? 'Ask about this invoice' : 'Ask Neo'}
+          />
+        )}
         {actions}
         <ColorModeToggle />
       </Stack>

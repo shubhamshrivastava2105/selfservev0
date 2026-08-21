@@ -2,6 +2,7 @@ import * as React from 'react';
 import {
   Alert,
   Avatar,
+  Box,
   Button,
   Card,
   CardContent,
@@ -46,6 +47,7 @@ import { useStore } from '../store';
 import { PageBody, SectionCard } from '../components/common';
 import { ShellBar } from '../components/shell';
 import { money } from '../engine';
+import { elapsed, formatDateTime, formatDuration, formatRelative } from '../clock';
 import type { Member, WorkflowRole } from '../types';
 
 const ROLES: WorkflowRole[] = ['Workflow admin', 'Reviewer', 'Agent', 'None'];
@@ -110,7 +112,15 @@ function RolePicker({
 /* ── Members ──────────────────────────────────────────────────────────── */
 
 export function MembersScreen() {
-  const { members, inviteMember, setMemberRole, toggleSuspend, removeMember, profile } = useStore();
+  const {
+    members,
+    inviteMember,
+    setMemberRole,
+    toggleSuspend,
+    removeMember,
+    profile,
+    goTo,
+  } = useStore();
 
   const [inviteOpen, setInviteOpen] = React.useState(false);
   const [inviteEmail, setInviteEmail] = React.useState('');
@@ -152,8 +162,7 @@ export function MembersScreen() {
               Members
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Every member, and every workflow in {profile.workspaceName || 'this workspace'},
-              regardless of your own roles. Roles are assigned here, grouped by workflow.
+              Everyone in {profile.workspaceName || 'this workspace'}, and their role in each workflow.
             </Typography>
           </Stack>
 
@@ -184,12 +193,12 @@ export function MembersScreen() {
                         <Stack direction="row" sx={{ gap: 0.75, alignItems: 'center', flexWrap: 'wrap' }}>
                           {member.name}
                           {member.isTenantOwner && (
-                            <Tooltip title="Tenant owner — exactly one, mandatory, transferable">
+                            <Tooltip title="Tenant owner. Exactly one, mandatory, transferable.">
                               <Chip size="sm" variant="purple" label="Tenant owner" />
                             </Tooltip>
                           )}
                           {member.isWorkspaceOwner && (
-                            <Tooltip title="Workspace owner — exactly one, mandatory, transferable">
+                            <Tooltip title="Workspace owner. Exactly one, mandatory, transferable.">
                               <Chip size="sm" variant="information" label="Workspace owner" />
                             </Tooltip>
                           )}
@@ -228,7 +237,7 @@ export function MembersScreen() {
                         />
                       </TableCell>
 
-                      <TableCell>{member.lastActive}</TableCell>
+                      <TableCell>{formatRelative(member.lastActive)}</TableCell>
 
                       <TableCell align="right" padding="checkbox">
                         <IconButton
@@ -252,37 +261,42 @@ export function MembersScreen() {
             <Grid size={{ xs: 12, md: 6 }}>
               <SectionCard
                 title="Suspend keeps everything"
-                description="Membership and every workflow role stay intact, and it is reversible in one click — for temporary cases such as leave. A workspace suspension blocks this workspace only; a tenant suspension, available to the tenant owner alone, blocks sign-in entirely."
+                description="For temporary cases such as leave."
               >
-                <Typography variant="body2" color="text.secondary">
-                  A suspension also freezes anything outstanding for that person — pending invites to
-                  them, and join requests they have raised are held rather than expiring, with their
-                  clocks paused. Removal cancels them outright.
-                </Typography>
+                <Stack sx={{ gap: 1.5 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    A suspension blocks this workspace only, keeps their roles, and reverses in one
+                    click. Removing someone deletes their membership but keeps their processing
+                    history.
+                  </Typography>
+                  <Box>
+                    <Button
+                      variant="secondary"
+                      appearance="outline"
+                      size="sm"
+                      onClick={() => goTo('workspace-config')}
+                    >
+                      Who can join lives in Workspace
+                    </Button>
+                  </Box>
+                </Stack>
               </SectionCard>
             </Grid>
+
             <Grid size={{ xs: 12, md: 6 }}>
               <SectionCard
                 title="Ownership guard"
-                description="Every workspace and tenant must always have an owner, so an owner cannot be removed or suspended until ownership is transferred."
+                description="A workspace always has exactly one owner, so an owner cannot be removed until ownership is transferred."
               >
                 <Typography variant="body2" color="text.secondary">
-                  Administrative authority does not silently grant data access — data access always
-                  comes from a workflow role. Nobody is blocked from granting themselves one, but every
-                  route is recorded: a self-assignment is flagged in the audit trail, and a tenant
-                  owner adding themselves to a workspace notifies its owner. The boundary is
-                  auditability, not prevention.
+                  Being an owner does not by itself grant access to invoice data. That always comes
+                  from a workflow role, and assigning yourself one is recorded in the audit trail.
                 </Typography>
               </SectionCard>
             </Grid>
           </Grid>
 
-          <Alert severity="info" title="Reaching an existing workspace">
-            After onboarding, an existing workspace can only be reached by invitation — there is no
-            in-app browse or request. Join requests exist in the onboarding flow only. Creating a new
-            workspace is always available. Cross-tenant membership is out of scope, so inviting an
-            address that already belongs to another organisation is blocked.
-          </Alert>
+          
         </Stack>
       </PageBody>
 
@@ -301,7 +315,7 @@ export function MembersScreen() {
             }}
           >
             <ArrowsClockwiseIcon size={16} />
-            Resend invite — 14-day expiry
+            Resend invite (14-day expiry)
           </MenuItem>
         )}
         <MenuItem
@@ -336,7 +350,7 @@ export function MembersScreen() {
       {/* Invite — a role per workflow, pre-filled from each default. */}
       <Dialog open={inviteOpen} onClose={() => setInviteOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle
-          subtitle="Bound to that address, 14-day expiry, re-sendable and revocable while pending. Work and personal domains are treated identically."
+          subtitle="The invite is bound to that address and expires in 14 days."
           onClose={() => setInviteOpen(false)}
         >
           Invite a colleague
@@ -351,10 +365,10 @@ export function MembersScreen() {
               status={inviteEmail !== '' && (!emailValid || alreadyHere) ? 'error' : undefined}
               helperText={
                 alreadyHere
-                  ? 'This address is already a member here — inviting again is a no-op.'
+                  ? 'This address is already a member here, so inviting again does nothing.'
                   : inviteEmail !== '' && !emailValid
                     ? 'Enter a valid email address'
-                    : 'Same-domain colleagues can also find this workspace themselves.'
+                    : 'Colleagues from your organization can also find this workspace themselves.'
               }
               fullWidth
             />
@@ -365,7 +379,7 @@ export function MembersScreen() {
               label="Invoice Processing"
               value={inviteIp}
               onChange={(event) => setInviteIp(event.target.value as WorkflowRole)}
-              helperText="Pre-filled from this workflow's default, and adjustable before sending."
+              helperText="Pre-filled from this workflow's default."
               fullWidth
             >
               {ROLES.map((role) => (
@@ -384,10 +398,9 @@ export function MembersScreen() {
               ))}
             </Select>
 
-            <Alert severity="info" title="Reviewer and Agent are identical in this version">
-              There is no maker-checker flow — whoever resolves an invoice also posts it. Both names
-              exist for later use. All three roles process an invoice end to end; the split is
-              administrative.
+            <Alert severity="info" title="All three roles process invoices end to end">
+              The difference is administrative: only a workflow admin can change configuration,
+              manage memory, or assign roles.
             </Alert>
           </Stack>
         </DialogContent>
@@ -442,38 +455,11 @@ export function MembersScreen() {
 
 /* ── Reporting ────────────────────────────────────────────────────────── */
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** "17 Aug 2026, 09:19" → epoch ms. */
-function parseStamp(text: string): number | null {
-  const match = /^(\d{1,2}) (\w{3}) (\d{4})(?:, (\d{2}):(\d{2}))?/.exec(text);
-  if (!match) return null;
-  const month = MONTHS.indexOf(match[2]);
-  if (month < 0) return null;
-  return Date.UTC(
-    Number(match[3]),
-    month,
-    Number(match[1]),
-    match[4] ? Number(match[4]) : 0,
-    match[5] ? Number(match[5]) : 0,
-  );
-}
-
 function median(values: number[]): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
-}
-
-function duration(ms: number | null): string {
-  if (ms === null) return '—';
-  const minutes = Math.round(ms / 60_000);
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ${minutes % 60}m`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ${hours % 24}h`;
 }
 
 function MetricCard({
@@ -515,21 +501,13 @@ export function ReportingScreen() {
   const terminal = real.filter((i) => i.terminalAt !== null);
 
   const cycleTimes = terminal
-    .map((i) => {
-      const from = parseStamp(i.ingestedAt);
-      const to = parseStamp(i.terminalAt!);
-      return from !== null && to !== null ? to - from : null;
-    })
+    .map((i) => elapsed(i.ingestedAt, i.terminalAt))
     .filter((v): v is number => v !== null);
 
   // Touch time excludes straight-through invoices rather than counting them as zero.
   const touchTimes = terminal
     .filter((i) => !i.stpPosted && i.firstSurfacedAt !== null)
-    .map((i) => {
-      const from = parseStamp(i.firstSurfacedAt!);
-      const to = parseStamp(i.terminalAt!);
-      return from !== null && to !== null ? to - from : null;
-    })
+    .map((i) => elapsed(i.firstSurfacedAt, i.terminalAt))
     .filter((v): v is number => v !== null);
 
   const overridesByRule = new Map<string, number>();
@@ -543,13 +521,14 @@ export function ReportingScreen() {
   const fromErp = withMatch.filter((i) => i.poSource === 'zoho').length;
   const erpShare = withMatch.length === 0 ? null : Math.round((fromErp / withMatch.length) * 100);
 
+  const stampMs = (iso: string | null) => (iso ? new Date(iso).getTime() : NaN);
   const firstTerminal = terminal
-    .map((i) => parseStamp(i.terminalAt!))
-    .filter((v): v is number => v !== null)
+    .map((i) => stampMs(i.terminalAt))
+    .filter((v) => !Number.isNaN(v))
     .sort((a, b) => a - b)[0];
   const firstIngest = real
-    .map((i) => parseStamp(i.ingestedAt))
-    .filter((v): v is number => v !== null)
+    .map((i) => stampMs(i.ingestedAt))
+    .filter((v) => !Number.isNaN(v))
     .sort((a, b) => a - b)[0];
 
   const posted = real.filter((i) => i.status === 'Posted');
@@ -565,7 +544,7 @@ export function ReportingScreen() {
               Reporting
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Live, per workflow, rolled up per workspace. {real.length} real invoices —{' '}
+              Live, per workflow, rolled up per workspace. {real.length} real invoices,{' '}
               {invoices.length - real.length} sample records are excluded.
             </Typography>
           </Stack>
@@ -574,16 +553,16 @@ export function ReportingScreen() {
             <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
               <MetricCard
                 icon={<ClockIcon size={16} />}
-                label="Cycle time — median"
-                value={duration(median(cycleTimes))}
+                label="Median cycle time"
+                value={formatDuration(median(cycleTimes))}
                 note={`Ingestion to terminal state, across all three paths so they stay comparable. ${cycleTimes.length} closed invoices.`}
               />
             </Grid>
             <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
               <MetricCard
                 icon={<LightningIcon size={16} />}
-                label="Touch time — median"
-                value={duration(median(touchTimes))}
+                label="Median touch time"
+                value={formatDuration(median(touchTimes))}
                 note={`First surfacing to terminal state, for invoices that surfaced at all. ${stp.length} straight-through invoices excluded rather than counted as zero.`}
               />
             </Grid>
@@ -593,7 +572,7 @@ export function ReportingScreen() {
                 label="Time to first processed invoice"
                 value={
                   firstTerminal !== undefined && firstIngest !== undefined
-                    ? duration(firstTerminal - firstIngest)
+                    ? formatDuration(firstTerminal - firstIngest)
                     : '—'
                 }
                 note="From the first invoice arriving to the first one reaching a terminal state."
@@ -604,7 +583,7 @@ export function ReportingScreen() {
                 icon={<PercentIcon size={16} />}
                 label="Matched against ERP data"
                 value={erpShare === null ? '—' : `${erpShare}%`}
-                note={`${fromErp} of ${withMatch.length} matches ran against Zoho records rather than uploaded documents — structured ground truth with no error bars.`}
+                note={`${fromErp} of ${withMatch.length} matches ran against Zoho records rather than uploaded documents, which is structured ground truth with no error bars.`}
               />
             </Grid>
           </Grid>
@@ -636,8 +615,7 @@ export function ReportingScreen() {
                   </TableBody>
                 </Table>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-                  {stp.length} of {posted.length || 0} posted invoices ran unsupervised. A filter and a
-                  full audit trail show exactly which.
+                  {stp.length} of {posted.length || 0} posted invoices ran unsupervised.
                 </Typography>
               </SectionCard>
             </Grid>
@@ -645,12 +623,11 @@ export function ReportingScreen() {
             <Grid size={{ xs: 12, md: 6 }}>
               <SectionCard
                 title="Overrides by rule"
-                description="Each override is logged with the actor, the time, the rule bypassed and the reason — and counted here."
+                description="Every override, counted by the rule it bypassed."
               >
                 {overridesByRule.size === 0 ? (
                   <Typography variant="body2" color="text.secondary">
-                    No overrides recorded. Missing documents are hard blocks and cannot be overridden
-                    at all, so this only ever counts variances and balances.
+                    No overrides recorded.
                   </Typography>
                 ) : (
                   <Table size="sm">
@@ -674,12 +651,11 @@ export function ReportingScreen() {
 
           <SectionCard
             title="Activity in this session"
-            description={`Everything you have done in ${profile.workspaceName || 'this workspace'} since signing in. Every tenant, workspace, role, override, deletion and restore is logged with actor, target, timestamp and scope.`}
+            description={`Everything done in ${profile.workspaceName || 'this workspace'}, with who did it and when.`}
           >
             {activity.length === 0 ? (
               <Typography variant="body2" color="text.secondary">
-                Nothing logged yet. Work an invoice, change a setting or invite someone and it appears
-                here.
+                Nothing yet.
               </Typography>
             ) : (
               <Table size="sm">
@@ -693,7 +669,7 @@ export function ReportingScreen() {
                 <TableBody>
                   {activity.map((entry, index) => (
                     <TableRow key={`${entry.at}-${index}`}>
-                      <TableCell>{entry.at}</TableCell>
+                      <TableCell>{formatDateTime(entry.at)}</TableCell>
                       <TableCell>{entry.actor}</TableCell>
                       <TableCell secondary={entry.detail}>{entry.action}</TableCell>
                     </TableRow>
@@ -703,11 +679,7 @@ export function ReportingScreen() {
             )}
           </SectionCard>
 
-          <Alert severity="info" title="One measurement question still open">
-            Whether the 7-minute activation target counts a pre-computed invoice is undecided.
-            Samples complete at Exported and never post — measuring on any first invoice is simpler,
-            measuring on the first real one is truer.
-          </Alert>
+          
         </Stack>
       </PageBody>
     </>

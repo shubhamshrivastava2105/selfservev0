@@ -6,6 +6,7 @@
  * already produced (Workflow PRD §5, §15.5).
  */
 
+import { now } from './clock';
 import type {
   ExtractedField,
   HardBlock,
@@ -36,12 +37,9 @@ export function num(value: number): string {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(value);
 }
 
-/** Prototype clock. Real timestamps would come from the server. */
+/** An ISO timestamp for something happening now. Formatted where it is shown. */
 export function stamp(): string {
-  const now = new Date();
-  const hh = String(now.getHours()).padStart(2, '0');
-  const mm = String(now.getMinutes()).padStart(2, '0');
-  return `19 Aug 2026, ${hh}:${mm}`;
+  return now();
 }
 
 /* ── Confidence ───────────────────────────────────────────────────────── */
@@ -66,7 +64,7 @@ export function extractionIsClear(invoice: Invoice, config: WorkflowConfig): boo
   return unacknowledgedFields(invoice, config.confidenceThreshold).length === 0;
 }
 
-/* ── Vendor normalisation ─────────────────────────────────────────────── */
+/* ── Vendor normalization ─────────────────────────────────────────────── */
 
 const LEGAL_SUFFIXES = [
   'inc', 'inc.', 'incorporated', 'llc', 'l.l.c.', 'ltd', 'ltd.', 'limited',
@@ -75,10 +73,10 @@ const LEGAL_SUFFIXES = [
 ];
 
 /**
- * The shipped normalisation library (§7.2): legal-entity suffixes,
+ * The shipped normalization library (§7.2): legal-entity suffixes,
  * punctuation, casing and whitespace. No client abbreviation list required.
  */
-export function normaliseVendor(name: string): string {
+export function normalizeVendor(name: string): string {
   const words = name
     .toLowerCase()
     .replace(/[.,&'"()-]/g, ' ')
@@ -90,8 +88,8 @@ export function normaliseVendor(name: string): string {
 
 /** Cheap similarity, 0–100. Enough to stand in for a real fuzzy matcher. */
 export function vendorSimilarity(a: string, b: string): number {
-  const x = normaliseVendor(a);
-  const y = normaliseVendor(b);
+  const x = normalizeVendor(a);
+  const y = normalizeVendor(b);
   if (x === y) return 100;
   const longer = x.length >= y.length ? x : y;
   const shorter = x.length >= y.length ? y : x;
@@ -132,7 +130,7 @@ function withinTolerance(diff: number, reference: number, abs: number, pct: numb
 function duplicateKey(invoice: Invoice): string {
   return [
     invoice.number.trim().toLowerCase(),
-    normaliseVendor(invoice.vendor),
+    normalizeVendor(invoice.vendor),
     invoice.legalEntity.trim().toLowerCase(),
   ].join('|');
 }
@@ -410,21 +408,18 @@ export function deriveStatus(invoice: Invoice, config: WorkflowConfig): InvoiceS
 
 /* ── Hard block copy ──────────────────────────────────────────────────── */
 
-export const HARD_BLOCK_COPY: Record<HardBlock, { title: string; why: string; next: string }> = {
+export const HARD_BLOCK_COPY: Record<HardBlock, { title: string; next: string }> = {
   duplicate: {
-    title: 'Duplicate — this invoice has already been seen',
-    why: 'The check ran and was conclusive, so there is no discrepancy for a person to judge. The other two checks were skipped.',
-    next: 'Reject it. A duplicate cannot be overridden.',
+    title: 'Duplicate: this invoice has already been seen',
+    next: 'The other two checks were skipped. Reject it to close this invoice.',
   },
   'no-po': {
-    title: 'No purchase order — matching has nothing to run against',
-    why: 'An override records a judgement about a discrepancy the system found and showed. Nothing was compared here, so there is no equivalent judgement to record.',
-    next: 'Type a PO number, upload the PO, or reject the invoice.',
+    title: 'No purchase order, so matching has nothing to run against',
+    next: 'Type a PO number, upload the purchase order, or reject the invoice.',
   },
   'no-grn': {
-    title: 'No goods receipt — the match type is 3-way',
-    why: 'Both the PO and the GRN must pass in a 3-way match. Dropping this one invoice to 2-way would leave invoices in one queue validated to different standards.',
-    next: 'Upload the GRN, or lower the match type to 2-way in configuration — which applies to what runs next.',
+    title: 'No goods receipt, and the match type is 3-way',
+    next: 'Upload the goods receipt, or change the match type to 2-way in workflow configuration.',
   },
 };
 

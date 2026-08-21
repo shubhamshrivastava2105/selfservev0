@@ -45,7 +45,6 @@ import {
   FilePdfIcon,
   ProhibitIcon,
   SealCheckIcon,
-  SparkleIcon,
   UploadSimpleIcon,
   UsersThreeIcon,
   WarningIcon,
@@ -76,6 +75,7 @@ import {
   signedMoney,
   unacknowledgedFields,
 } from '../engine';
+import { formatDate, formatDateTime } from '../clock';
 import type { ExtractedField, Invoice, MetadataFinding, Stage } from '../types';
 
 /* ── The document beside the values ───────────────────────────────────── */
@@ -116,9 +116,7 @@ function DocumentPane({ label, filename, badge }: { label: string; filename: str
                 {label}
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                The source document sits here, beside its extracted values.
-                <br />
-                Drawn rather than rendered in this prototype.
+                Page 1 of 1
               </Typography>
             </Stack>
           </Box>
@@ -188,15 +186,36 @@ function ExtractionPanel({ invoice }: { invoice: Invoice }) {
             </Button>
           }
         >
-          Matching will not run until every one of these is acknowledged or corrected — on the
-          reference documents as much as on the invoice. Nothing is rejected for being badly scanned.
+          Correct anything the scan got wrong, or acknowledge it as read. Matching runs once they
+              are all dealt with.
         </Alert>
       )}
 
       {clear && !readOnly && (
         <Alert severity="success" title="Every field has cleared">
-          Confidence exists on both sides of the match, so a variance later can be told apart from a
-          misread.
+          Every field on the invoice and its reference documents has been checked.
+        </Alert>
+      )}
+
+      {invoice.attachments.length > 0 && (
+        <Alert severity="info" title={`${invoice.attachments.length} attached, and not matching inputs`}>
+          <Stack sx={{ gap: 1 }}>
+            <Stack direction="row" sx={{ gap: 0.75, flexWrap: 'wrap' }}>
+              {invoice.attachments.map((file) => (
+                <Chip
+                  key={file.name}
+                  size="sm"
+                  variant={file.kind === 'Tax document' ? 'purple' : 'secondary'}
+                  icon={<FilePdfIcon size={12} />}
+                  label={`${file.name} · ${file.kind}`}
+                />
+              ))}
+            </Stack>
+            <Typography variant="caption" color="text.secondary">
+              A tax document, Faktur Pajak included, is stored and carried to posting where the ERP
+              takes it. It is never validated here, and never compared against the invoice.
+            </Typography>
+          </Stack>
         </Alert>
       )}
 
@@ -227,7 +246,7 @@ function ExtractionPanel({ invoice }: { invoice: Invoice }) {
               <Box sx={{ mt: 2 }}>
                 {source === 'zoho' && (
                   <Alert severity="info" title="Structured record from Zoho" floating>
-                    Ground truth — no confidence score, and nothing here for you to check.
+                    Read directly from Zoho, so there is nothing here to check.
                   </Alert>
                 )}
 
@@ -264,7 +283,7 @@ function ExtractionPanel({ invoice }: { invoice: Invoice }) {
                                 onClick={() => editField(invoice.id, docTab, f.key, suggestion)}
                               />
                               <Typography variant="caption" color="text.secondary">
-                                — click to accept
+                                to accept
                               </Typography>
                             </Stack>
                           )}
@@ -449,7 +468,7 @@ function LineCoding({ invoice, editable }: { invoice: Invoice; editable: boolean
                       label="GL account"
                       value={l.gl}
                       status={missingGl ? 'warning' : undefined}
-                      helperText={missingGl ? 'Not assigned — needed before posting.' : undefined}
+                      helperText={missingGl ? 'Not assigned. Needed before posting.' : undefined}
                       onChange={(event) => setLineCode(invoice.id, l.id, 'gl', String(event.target.value))}
                       fullWidth
                     >
@@ -546,7 +565,7 @@ function MatchingPanel({ invoice }: { invoice: Invoice }) {
   if (!result) {
     return (
       <Alert severity="info" title="Matching has not run yet">
-        Clear the extraction stage first — matching does not run until every low-confidence field is
+        Clear the extraction stage first. Matching does not run until every low-confidence field is
         acknowledged or corrected.
       </Alert>
     );
@@ -576,7 +595,7 @@ function MatchingPanel({ invoice }: { invoice: Invoice }) {
     <Stack sx={{ gap: 3 }}>
       {result.matchTypeUsed !== config.matchType && (
         <Alert severity="info" title={`This result was produced by a ${result.matchTypeUsed} match`}>
-          Configuration is now set to {config.matchType}. Nothing is re-evaluated retroactively — the
+          Configuration is now set to {config.matchType}. Nothing is re-evaluated retroactively. The
           new setting reaches this invoice only when its stage runs again.
           <Box sx={{ mt: 1.5 }}>
             <Button
@@ -597,7 +616,10 @@ function MatchingPanel({ invoice }: { invoice: Invoice }) {
           severity="error"
           title={HARD_BLOCK_COPY[block].title}
           action={
-            <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
+            <Stack
+              direction="row"
+              sx={{ gap: 1, flexWrap: 'wrap', '& .MuiButton-root': { whiteSpace: 'nowrap' } }}
+            >
               {block === 'no-grn' && !readOnly && (
                 <>
                   <Button
@@ -609,7 +631,7 @@ function MatchingPanel({ invoice }: { invoice: Invoice }) {
                   >
                     Upload the GRN
                   </Button>
-                  <Button variant="secondary" appearance="text" size="sm" onClick={() => goTo('config')}>
+                  <Button variant="secondary" appearance="text" size="sm" onClick={() => goTo('workflow-config')}>
                     Change match type
                   </Button>
                 </>
@@ -638,10 +660,7 @@ function MatchingPanel({ invoice }: { invoice: Invoice }) {
           }
         >
           <Stack sx={{ gap: 1 }}>
-            <Typography variant="body2">{HARD_BLOCK_COPY[block].why}</Typography>
-            <Typography variant="body2" weight="medium">
-              {HARD_BLOCK_COPY[block].next}
-            </Typography>
+            <Typography variant="body2">{HARD_BLOCK_COPY[block].next}</Typography>
             {block === 'no-grn' && !connections.zohoInventory && (
               <Typography variant="caption" color="text.secondary">
                 Receipts live in Zoho Inventory, which is not connected. On Books alone, 3-way only
@@ -654,8 +673,7 @@ function MatchingPanel({ invoice }: { invoice: Invoice }) {
 
       {!block && matchingIsClear(invoice) && (
         <Alert severity="success" title="All checks passed">
-          There is no separate approval step. An invoice that clears matching surfaces at ERP posting
-          and you post it.
+          Ready to post.
         </Alert>
       )}
 
@@ -664,19 +682,21 @@ function MatchingPanel({ invoice }: { invoice: Invoice }) {
           <CheckCard
             title="1 · Duplicate"
             state={result.duplicate.state}
-            description="Runs first, on invoice number, vendor and legal entity. Tenant-wide, so it spans every workspace. On a hit the other two are skipped."
+            description="Invoice number, vendor and legal entity, across every workspace in your organization."
           >
             {result.duplicate.original && (
               <Alert severity="error" title="Already seen" floating>
                 <Stack sx={{ gap: 0.5 }}>
                   <Typography variant="body2">
                     {result.duplicate.original.number} · {result.duplicate.original.vendor} ·{' '}
-                    {result.duplicate.original.date}
+                    {formatDate(result.duplicate.original.date)}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    Processed by {result.duplicate.original.processedBy}.
+                    {result.duplicate.original.processedBy === 'System'
+                      ? 'Processed without needing anyone.'
+                      : `Processed by ${result.duplicate.original.processedBy}.`}
                     {result.duplicate.original.metadataOnly
-                      ? ' It sits in a workspace you cannot see, so only metadata is shown — no link, no document.'
+                      ? ' It sits in a workspace you cannot see, so only these details are shown.'
                       : ''}
                   </Typography>
                 </Stack>
@@ -689,7 +709,7 @@ function MatchingPanel({ invoice }: { invoice: Invoice }) {
           <CheckCard
             title="2 · Metadata"
             state={metadataState}
-            description="Header and billing fields against the PO, vendor name included. Runs in parallel with the line-item check."
+            description="Header and billing fields against the purchase order, including the vendor name."
           >
             {result.metadata.findings.length > 0 && (
               <Stack sx={{ gap: 1 }}>
@@ -727,7 +747,7 @@ function MatchingPanel({ invoice }: { invoice: Invoice }) {
                       <Chip
                         size="sm"
                         variant={settled ? 'success' : 'error'}
-                        label={settled ? `${rule} — overridden` : rule}
+                        label={settled ? `${rule} · overridden` : rule}
                       />
                       {!settled && !readOnly && (
                         <Button
@@ -815,12 +835,14 @@ function MatchingPanel({ invoice }: { invoice: Invoice }) {
           <Typography variant="body1" weight="medium" sx={{ flex: 1 }}>
             Line comparison
           </Typography>
-          <Chip
-            size="sm"
-            variant="information"
-            icon={<DatabaseIcon size={12} />}
-            label={`PO from ${invoice.poSource === 'zoho' ? 'Zoho' : invoice.poSource === 'uploaded' ? 'an uploaded document' : 'nowhere'}`}
-          />
+          {invoice.poSource !== 'none' && (
+            <Chip
+              size="sm"
+              variant="information"
+              icon={<DatabaseIcon size={12} />}
+              label={invoice.poSource === 'zoho' ? 'PO from Zoho' : 'PO from an uploaded document'}
+            />
+          )}
         </Stack>
         <LineComparison invoice={invoice} />
       </Stack>
@@ -831,8 +853,8 @@ function MatchingPanel({ invoice }: { invoice: Invoice }) {
         </Typography>
         <LineCoding invoice={invoice} editable={!readOnly} />
         <Typography variant="caption" color="text.secondary">
-          Tax codes come from Zoho where connected, otherwise from the country defaults for your
-          organisation. Assignment stays manual per line, and both tax and GL are learnable.
+          Tax codes come from Zoho where it is connected, otherwise from your organization's country
+          defaults.
         </Typography>
       </Stack>
 
@@ -846,7 +868,7 @@ function MatchingPanel({ invoice }: { invoice: Invoice }) {
               <Stack sx={{ gap: 0.25 }}>
                 <Typography variant="body2">“{o.reason}”</Typography>
                 <Typography variant="caption" color="text.secondary">
-                  {o.actor} · {o.at} · counted by rule in reporting
+                  {o.actor} · {formatDateTime(o.at)}
                 </Typography>
               </Stack>
             </Alert>
@@ -863,7 +885,7 @@ function MatchingPanel({ invoice }: { invoice: Invoice }) {
         maxWidth="sm"
       >
         <DialogTitle
-          subtitle="Logged with your name, the time, the rule bypassed and the reason. Counted by rule in reporting."
+          subtitle="Recorded against this invoice with your name and the time."
           onClose={() => setOverrideTarget(null)}
         >
           Override with a reason
@@ -881,8 +903,8 @@ function MatchingPanel({ invoice }: { invoice: Invoice }) {
               status={reason.length > 0 && reason.trim().length < 8 ? 'error' : undefined}
               helperText={
                 reason.length > 0 && reason.trim().length < 8
-                  ? 'Say a little more — this is the record of your judgement.'
-                  : 'Mandatory. The control here is auditability, not prevention.'
+                  ? 'Add a little more detail.'
+                  : 'Required.'
               }
               multiline
               minRows={3}
@@ -906,7 +928,7 @@ function MatchingPanel({ invoice }: { invoice: Invoice }) {
           subtitle={
             connections.zohoBooks
               ? 'Once the number is known, the PO and its receipts are fetched from Zoho as structured records.'
-              : 'No ERP is connected, so nothing will be fetched — upload the PO instead.'
+              : 'No ERP is connected, so nothing will be fetched, so upload the PO instead.'
           }
           onClose={() => setPoDialogOpen(false)}
         >
@@ -994,13 +1016,12 @@ function MetadataFindingRow({
 
         {finding.kind === 'vendor' && (
           <Typography variant="caption" color="text.secondary">
-            Both names shown. Confirming the pair feeds memory, so the same abbreviation is not
-            queried twice.
+            Confirm the pair and the same abbreviation will not be queried again.
           </Typography>
         )}
         {finding.kind === 'balance' && (
           <Typography variant="caption" color="text.secondary">
-            Utilisation shown. No new PO is required — override or reject.
+            Override this with a reason, or reject the invoice. No new PO is needed.
           </Typography>
         )}
 
@@ -1050,8 +1071,7 @@ function PostingPanel({ invoice }: { invoice: Invoice }) {
 
       {invoice.status === 'Exported' && (
         <Alert severity="info" title="Exported">
-          Terminal where no ERP was connected. It can be downloaded again freely, creating no second
-          record — but an exported invoice can never be posted.
+          You can download it again as often as you like. An exported invoice cannot be posted.
         </Alert>
       )}
 
@@ -1063,15 +1083,13 @@ function PostingPanel({ invoice }: { invoice: Invoice }) {
 
       {!readOnly && !cleared && (
         <Alert severity="warning" title="This invoice has not cleared matching">
-          It appears in a bulk download with its current state and stays open in the queue —
-          otherwise a single download would silently terminate work you had not finished.
+          A bulk download includes it with its current state and leaves it open in the queue.
         </Alert>
       )}
 
       {!readOnly && invoice.isSample && (
-        <Alert severity="info" title="Sample data — this will never post to a real ERP">
-          A trial must not put invented bills into a real ledger. Sample records are excluded from
-          reporting and complete at Exported instead.
+        <Alert severity="info" title="Sample data never posts to a real ERP">
+          Sample records stay out of reporting and finish at Exported.
         </Alert>
       )}
 
@@ -1080,7 +1098,7 @@ function PostingPanel({ invoice }: { invoice: Invoice }) {
           severity="info"
           title="No ERP connected"
           action={
-            <Button variant="secondary" appearance="outline" size="sm" onClick={() => goTo('connections')}>
+            <Button variant="secondary" appearance="outline" size="sm" onClick={() => goTo('workspace-config')}>
               Connect Zoho
             </Button>
           }
@@ -1140,9 +1158,8 @@ function PostingPanel({ invoice }: { invoice: Invoice }) {
           </Stack>
 
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2 }}>
-            One terminal action, three forms: post where an ERP is connected, download where none is,
-            and neither under straight-through processing — which posts on its own. There is no
-            separate approval or payload-confirmation step.
+            Posting attaches the original document to the Zoho bill and stores its document number
+            against this record.
           </Typography>
         </CardContent>
       </Card>
@@ -1152,8 +1169,8 @@ function PostingPanel({ invoice }: { invoice: Invoice }) {
           What goes in the CSV
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          The output of the matching, not a bill-import file: the header, every line, the PO and GRN
-          values beside them, and match status and variance per line.
+          Every line with its PO and GRN values beside it, and the match status and variance for
+          each.
         </Typography>
         <LineComparison invoice={invoice} />
         <Typography variant="body1" weight="medium" sx={{ mt: 2 }}>
@@ -1176,7 +1193,7 @@ function AuditPanel({ invoice }: { invoice: Invoice }) {
             Audit trail
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Every stage, correction, acknowledgement, override and terminal action, with the actor and
+            Every stage, correction, acknowledgment, override and terminal action, with the actor and
             the time. Auto-posted invoices carry the same trail, which is what makes unsupervised work
             reviewable.
           </Typography>
@@ -1185,7 +1202,7 @@ function AuditPanel({ invoice }: { invoice: Invoice }) {
         <Stepper activeStep={-1}>
           {[...invoice.audit].reverse().map((entry, index) => (
             <Step key={`${entry.at}-${index}`} expanded completed>
-              <StepLabel optional={`${entry.actor} · ${entry.at}`}>{entry.action}</StepLabel>
+              <StepLabel optional={`${entry.actor} · ${formatDateTime(entry.at)}`}>{entry.action}</StepLabel>
               {entry.detail && <StepContent>{entry.detail}</StepContent>}
             </Step>
           ))}
@@ -1213,6 +1230,7 @@ export function InvoiceDetailScreen() {
     advanceToPosting,
     rejectInvoice,
     goBackToExtraction,
+    askNeoOpen,
   } = useStore();
 
   const invoice = invoices.find((i) => i.id === openInvoiceId);
@@ -1275,13 +1293,24 @@ export function InvoiceDetailScreen() {
   return (
     <>
       <RecordBar
+        askNeoInvoiceId={invoice.id}
         title={tab === 'audit' ? 'Audit trail' : STAGE_LABEL[tab]}
-        meta={[
-          { icon: <FilePdfIcon size={META_ICON_PX} />, label: invoice.number },
-          { icon: <UsersThreeIcon size={META_ICON_PX} />, label: invoice.vendor },
-          { icon: <ClockIcon size={META_ICON_PX} />, label: invoice.invoiceDate },
-          { icon: <CurrencyDollarIcon size={META_ICON_PX} />, label: money(invoice.amount, invoice.currency) },
-        ]}
+        meta={
+          askNeoOpen
+            ? [
+                { icon: <FilePdfIcon size={META_ICON_PX} />, label: invoice.number },
+                { icon: <UsersThreeIcon size={META_ICON_PX} />, label: invoice.vendor },
+              ]
+            : [
+                { icon: <FilePdfIcon size={META_ICON_PX} />, label: invoice.number },
+                { icon: <UsersThreeIcon size={META_ICON_PX} />, label: invoice.vendor },
+                { icon: <ClockIcon size={META_ICON_PX} />, label: formatDate(invoice.invoiceDate) },
+                {
+                  icon: <CurrencyDollarIcon size={META_ICON_PX} />,
+                  label: money(invoice.amount, invoice.currency),
+                },
+              ]
+        }
         actions={
           <>
             <Tooltip title="Back to the queue">
@@ -1293,17 +1322,6 @@ export function InvoiceDetailScreen() {
                 onClick={() => goTo('queue')}
               >
                 <ArrowLeftIcon />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="Ask Neo about this invoice">
-              <IconButton
-                variant="primary"
-                appearance="outline"
-                size="sm"
-                aria-label="Ask Neo about this invoice"
-                onClick={() => goTo('ask-neo')}
-              >
-                <SparkleIcon />
               </IconButton>
             </Tooltip>
             {!readOnly && (
@@ -1373,7 +1391,7 @@ export function InvoiceDetailScreen() {
                   setTab('extraction');
                 }}
               >
-                Back to extraction — correcting a field re-runs matching
+                Back to extraction. Correcting a field re-runs matching
               </Button>
             </Stack>
           )}
@@ -1382,7 +1400,7 @@ export function InvoiceDetailScreen() {
 
       <Dialog open={rejectOpen} onClose={() => setRejectOpen(false)} role="alertdialog" fullWidth maxWidth="sm">
         <DialogTitle
-          subtitle="Closed by a person, with the reason on the record. Rejected invoices are retained and still count for duplicate detection."
+          subtitle="The reason is kept on the record, and the invoice still counts for duplicate detection."
           onClose={() => setRejectOpen(false)}
         >
           Reject {invoice.number}?

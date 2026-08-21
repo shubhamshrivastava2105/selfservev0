@@ -1,17 +1,20 @@
 import { StoreProvider, useStore } from './store';
 import { AppShell } from './components/shell';
+import { ScenarioSwitcher } from './components/ScenarioSwitcher';
 import { ProfileScreen, RoutingScreen, SignupScreen } from './screens/Onboarding';
 import { AskNeoScreen } from './screens/AskNeo';
 import { QueueScreen } from './screens/Queue';
 import { InvoiceDetailScreen } from './screens/InvoiceDetail';
-import { ConfigScreen, ConnectionsScreen } from './screens/Settings';
+import { WorkflowConfigScreen, WorkspaceConfigScreen } from './screens/Settings';
 import { MembersScreen, ReportingScreen } from './screens/People';
 
 function Router() {
-  const { screen } = useStore();
+  const { screen, profile } = useStore();
 
   // The onboarding screens carry no app chrome.
-  if (screen === 'signup') return <SignupScreen />;
+  // Keyed on the staged address: a scenario applied while already on this screen
+  // would otherwise leave the form holding its own local state.
+  if (screen === 'signup') return <SignupScreen key={profile.email} />;
   if (screen === 'routing') return <RoutingScreen />;
   if (screen === 'profile') return <ProfileScreen />;
 
@@ -20,8 +23,8 @@ function Router() {
       {screen === 'ask-neo' && <AskNeoScreen />}
       {screen === 'queue' && <QueueScreen />}
       {screen === 'invoice' && <InvoiceDetailScreen />}
-      {screen === 'config' && <ConfigScreen />}
-      {screen === 'connections' && <ConnectionsScreen />}
+      {screen === 'workflow-config' && <WorkflowConfigScreen />}
+      {screen === 'workspace-config' && <WorkspaceConfigScreen />}
       {screen === 'members' && <MembersScreen />}
       {screen === 'reporting' && <ReportingScreen />}
     </AppShell>
@@ -32,6 +35,8 @@ export function App() {
   return (
     <StoreProvider>
       <Router />
+      {/* Demo aid. Remove this line and scenarios.ts / ScenarioSwitcher.tsx to strip it. */}
+      <ScenarioSwitcher />
     </StoreProvider>
   );
 }

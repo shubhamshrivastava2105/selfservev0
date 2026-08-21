@@ -6,8 +6,12 @@
  * formats are all the US set (Workflow PRD §3, §8).
  */
 
+import { NOW, at, formatDate } from './clock';
 import type {
   Connections,
+  RefSource,
+  DomainVerdict,
+  IndexedDocument,
   DiscoverableWorkspace,
   ExtractedField,
   Invoice,
@@ -20,7 +24,6 @@ import type {
 
 /* ── The signed-in person and their tenant ────────────────────────────── */
 
-export const TODAY = '2026-08-19';
 
 export const SIGNED_IN = {
   firstName: 'Shubham',
@@ -30,10 +33,52 @@ export const SIGNED_IN = {
 };
 
 export const TENANT_NAME = 'Neoflo';
+
+/**
+ * Domains that already have a tenant in this prototype. Anyone else is the
+ * first from their domain, which is a different flow: there is no organization
+ * to show them yet, so no workspace list either.
+ */
+export const EXISTING_TENANT_DOMAINS = ['neoflo.ai'];
+
+/**
+ * Free providers. A personal address is refused at signup: a tenant is keyed on
+ * a company domain, so gmail.com would put unrelated people in one organization.
+ */
+export const PERSONAL_PROVIDERS = [
+  'gmail.com',
+  'outlook.com',
+  'hotmail.com',
+  'yahoo.com',
+  'icloud.com',
+  'proton.me',
+];
+
+/** The workspace and role an invited user arrives with. */
+export const PENDING_INVITE = {
+  workspaceName: 'AP EMEA',
+  invitedBy: 'Kaustav Dutta',
+  invoiceProcessingRole: 'Reviewer' as const,
+};
+
+/** What will happen when this address signs up. Shown on the form itself. */
+export function readDomain(email: string): {
+  verdict: DomainVerdict;
+  domain: string;
+} {
+  const domain = (email.split('@')[1] ?? '').toLowerCase();
+  if (PERSONAL_PROVIDERS.includes(domain)) return { verdict: 'personal-provider', domain };
+  if (EXISTING_TENANT_DOMAINS.includes(domain)) return { verdict: 'existing-tenant', domain };
+  return { verdict: 'first-of-domain', domain };
+}
 export const LEGAL_ENTITY = 'Neoflo Inc.';
 
 /** Where the user last visited, for the returning-visit briefing (Journey §2). */
-export const LAST_VISIT = '18 Aug 2026, 17:40';
+const NOW_HOUR = NOW.getHours();
+const NOW_MINUTE = NOW.getMinutes();
+
+/** When the user was last here, for the returning-visit briefing. */
+export const LAST_VISIT = at(1, 17, 40);
 
 /* ── Onboarding options ───────────────────────────────────────────────── */
 
@@ -62,10 +107,35 @@ export const COUNTRIES = [
  * for the user now and the request goes to the owner.
  */
 export const DISCOVERABLE_WORKSPACES: DiscoverableWorkspace[] = [
-  { id: 'ws-finance', name: 'Finance', owner: 'Vibhor Sharma', members: 6, autoApprove: true },
-  { id: 'ws-ap-emea', name: 'AP — EMEA', owner: 'Kaustav Dutta', members: 3, autoApprove: false },
-  { id: 'ws-procurement', name: 'Procurement', owner: 'Hemshankar Rao', members: 4, autoApprove: true },
+  { id: 'ws-finance', name: 'Finance', owner: 'Vibhor Sharma', members: 6, visibility: 'public' },
+  { id: 'ws-ap-emea', name: 'AP EMEA', owner: 'Kaustav Dutta', members: 3, visibility: 'approval' },
+  { id: 'ws-procurement', name: 'Procurement', owner: 'Hemshankar Rao', members: 4, visibility: 'public' },
+  // Never listed on the routing screen. It exists here to prove that.
+  { id: 'ws-payroll', name: 'Payroll', owner: 'Vibhor Sharma', members: 2, visibility: 'private' },
 ];
+
+/** Copy for each visibility setting, used on the routing and members screens. */
+export const VISIBILITY_COPY: Record<
+  DiscoverableWorkspace['visibility'],
+  { label: string; short: string; detail: string }
+> = {
+  public: {
+    label: 'Public to your organization',
+    short: 'Joins instantly',
+    detail: 'Anyone with a company email address can find this workspace and join it themselves.',
+  },
+  approval: {
+    label: 'Needs approval to join',
+    short: 'Needs approval',
+    detail:
+      'People can find it and ask to join. You approve each request, and they get their own workspace to work in meanwhile.',
+  },
+  private: {
+    label: 'Private',
+    short: 'Invitation only',
+    detail: 'Nobody can find this workspace. The only way in is an invitation from you.',
+  },
+};
 
 /* ── Tax and GL code lists (US) ───────────────────────────────────────── */
 
@@ -80,12 +150,12 @@ export const VAT_CODES = [
 export const WHT_CODES = ['US-NONE', 'US-1099-NEC', 'US-BACKUP-24'];
 
 export const GL_CODES = [
-  '5010 — Cost of goods sold',
-  '6200 — Office supplies',
-  '6400 — IT and software',
-  '6500 — Repairs and maintenance',
-  '7100 — Freight and delivery',
-  '7400 — Printing and marketing',
+  '5010 · Cost of goods sold',
+  '6200 · Office supplies',
+  '6400 · IT and software',
+  '6500 · Repairs and maintenance',
+  '7100 · Freight and delivery',
+  '7400 · Printing and marketing',
 ];
 
 /* ── Defaults ─────────────────────────────────────────────────────────── */
@@ -122,6 +192,7 @@ export const DEFAULT_CONNECTIONS: Connections = {
   mailboxProvider: 'gmail',
   mailboxAddress: 'ap@neoflo.ai',
   mailboxFolder: 'Invoices/Inbound',
+  ticketing: null,
 };
 
 /* ── Members ──────────────────────────────────────────────────────────── */
@@ -134,7 +205,7 @@ export const MEMBERS: Member[] = [
     invoiceProcessing: 'Workflow admin',
     agenticSearch: 'Workflow admin',
     status: 'Active',
-    lastActive: 'Just now',
+    lastActive: at(0, NOW_HOUR, NOW_MINUTE),
     isWorkspaceOwner: true,
     isTenantOwner: true,
   },
@@ -145,7 +216,7 @@ export const MEMBERS: Member[] = [
     invoiceProcessing: 'Reviewer',
     agenticSearch: 'Agent',
     status: 'Active',
-    lastActive: '2 hours ago',
+    lastActive: at(0, Math.max(0, NOW_HOUR - 2), NOW_MINUTE),
     isWorkspaceOwner: false,
     isTenantOwner: false,
   },
@@ -156,7 +227,7 @@ export const MEMBERS: Member[] = [
     invoiceProcessing: 'Agent',
     agenticSearch: 'Agent',
     status: 'Active',
-    lastActive: 'Yesterday',
+    lastActive: at(1, 16, 20),
     isWorkspaceOwner: false,
     isTenantOwner: false,
   },
@@ -167,7 +238,7 @@ export const MEMBERS: Member[] = [
     invoiceProcessing: 'Reviewer',
     agenticSearch: 'None',
     status: 'Suspended',
-    lastActive: '9 days ago',
+    lastActive: at(9, 11, 5),
     isWorkspaceOwner: false,
     isTenantOwner: false,
   },
@@ -178,7 +249,7 @@ export const MEMBERS: Member[] = [
     invoiceProcessing: 'Agent',
     agenticSearch: 'Agent',
     status: 'Invite pending',
-    lastActive: 'Invited 3 days ago',
+    lastActive: at(3, 9, 30),
     isWorkspaceOwner: false,
     isTenantOwner: false,
   },
@@ -188,7 +259,7 @@ export const MEMBERS: Member[] = [
 
 /**
  * Two patterns sit at a streak of 2. The threshold is 3, so the next
- * acknowledgement of either forms a memory in front of you — which is the
+ * acknowledgment of either forms a memory in front of you — which is the
  * only way to see §9 happen inside one sitting.
  */
 export const MEMORY_PATTERNS: MemoryPattern[] = [
@@ -197,9 +268,9 @@ export const MEMORY_PATTERNS: MemoryPattern[] = [
     field: 'GL code',
     fieldKey: 'gl',
     patternKey: 'Redwood Office Supply · office consumables',
-    suggestedValue: '6200 — Office supplies',
+    suggestedValue: '6200 · Office supplies',
     streak: 2,
-    lastSeen: '13 Aug 2026',
+    lastSeen: at(6),
   },
   {
     id: 'mem-2',
@@ -208,7 +279,7 @@ export const MEMORY_PATTERNS: MemoryPattern[] = [
     patternKey: 'Cascade Industrial Parts · all lines',
     suggestedValue: 'US-CA-SALES-7.25',
     streak: 2,
-    lastSeen: '12 Aug 2026',
+    lastSeen: at(7),
   },
   {
     id: 'mem-3',
@@ -217,7 +288,7 @@ export const MEMORY_PATTERNS: MemoryPattern[] = [
     patternKey: 'REDWOOD OFFICE SUPPLY CO → Redwood Office Supply',
     suggestedValue: 'Redwood Office Supply',
     streak: 4,
-    lastSeen: '11 Aug 2026',
+    lastSeen: at(8),
   },
 ];
 
@@ -341,21 +412,21 @@ export const SOURCES: InvoiceSource[] = [
     id: 'src-mail-1',
     kind: 'Mailbox',
     label: 'ap@neoflo.ai · Invoices/Inbound · "August freight + network"',
-    arrivedAt: '18 Aug 2026, 08:12',
+    arrivedAt: at(1, 8, 12),
     heldDocuments: [],
   },
   {
     id: 'src-upload-1',
     kind: 'Upload',
     label: 'august-batch.zip · 9 documents',
-    arrivedAt: '17 Aug 2026, 14:03',
+    arrivedAt: at(2, 14, 3),
     heldDocuments: ['PO-US-91004.pdf'],
   },
   {
     id: 'src-mail-2',
     kind: 'Mailbox',
     label: 'ap@neoflo.ai · Invoices/Inbound · "Statement — no attachment"',
-    arrivedAt: '16 Aug 2026, 11:47',
+    arrivedAt: at(3, 11, 47),
     heldDocuments: ['vendor-statement-aug.pdf'],
   },
 ];
@@ -379,7 +450,7 @@ export const INITIAL_INVOICES: Invoice[] = [
     legalEntity: LEGAL_ENTITY,
     currency: 'USD',
     amount: 3940.24,
-    invoiceDate: '18 Aug 2026',
+    invoiceDate: at(1),
     poNumber: 'PO-US-77004',
     source: 'Mailbox',
     sourceId: 'src-mail-1',
@@ -390,7 +461,7 @@ export const INITIAL_INVOICES: Invoice[] = [
     invoiceFields: invoiceFields(
       {
         number: 'INV-77120',
-        date: '18 Aug 2026',
+        date: formatDate(at(1)),
         vendor: 'Sierra Netwoks',
         po: 'PO-US-77004',
         currency: 'USD',
@@ -410,18 +481,22 @@ export const INITIAL_INVOICES: Invoice[] = [
     poSource: 'zoho',
     grnSource: 'none',
     lines: [
-      line('l1', 'Network switches — 48 port', 4, 4, null, 720.0, '6400 — IT and software'),
-      line('l2', 'Install labour', 8, 8, null, 132.53, '6400 — IT and software'),
+      line('l1', 'Network switches — 48 port', 4, 4, null, 720.0, '6400 · IT and software'),
+      line('l2', 'Install labour', 8, 8, null, 132.53, '6400 · IT and software'),
+    ],
+    attachments: [
+      { name: 'faktur-pajak-77120.pdf', kind: 'Tax document' },
+      { name: 'delivery-note-77120.pdf', kind: 'Supporting document' },
     ],
     matchResult: null,
     overrides: [],
     audit: [
-      audit('18 Aug 2026, 08:12', 'Ingested', 'Mailbox · Invoices/Inbound'),
-      audit('18 Aug 2026, 08:12', 'Extraction started'),
-      audit('18 Aug 2026, 08:13', 'Surfaced as Action Required', '4 fields below the 85% threshold'),
+      audit(at(1, 8, 12), 'Ingested', 'Mailbox · Invoices/Inbound'),
+      audit(at(1, 8, 12), 'Extraction started'),
+      audit(at(1, 8, 13), 'Surfaced as Action Required', '4 fields below the 85% threshold'),
     ],
-    ingestedAt: '18 Aug 2026, 08:12',
-    firstSurfacedAt: '18 Aug 2026, 08:13',
+    ingestedAt: at(1, 8, 12),
+    firstSurfacedAt: at(1, 8, 13),
     terminalAt: null,
   },
 
@@ -433,7 +508,7 @@ export const INITIAL_INVOICES: Invoice[] = [
     legalEntity: LEGAL_ENTITY,
     currency: 'USD',
     amount: 7215.6,
-    invoiceDate: '17 Aug 2026',
+    invoiceDate: at(2),
     poNumber: 'PO-US-88213',
     source: 'Mailbox',
     sourceId: 'src-mail-1',
@@ -443,7 +518,7 @@ export const INITIAL_INVOICES: Invoice[] = [
     status: 'Action Required',
     invoiceFields: invoiceFields({
       number: 'INV-88213',
-      date: '17 Aug 2026',
+      date: formatDate(at(2)),
       vendor: 'Puget Logistics',
       po: 'PO-US-88213',
       currency: 'USD',
@@ -461,12 +536,13 @@ export const INITIAL_INVOICES: Invoice[] = [
     poSource: 'zoho',
     grnSource: 'none',
     lines: [
-      line('l1', 'Freight — inbound, August', 1, 1, null, 5400.0, '7100 — Freight and delivery'),
-      line('l2', 'Fuel surcharge', 1, 1, null, 1815.6, '7100 — Freight and delivery'),
+      line('l1', 'Freight — inbound, August', 1, 1, null, 5400.0, '7100 · Freight and delivery'),
+      line('l2', 'Fuel surcharge', 1, 1, null, 1815.6, '7100 · Freight and delivery'),
     ],
+    attachments: [],
     matchResult: {
       matchTypeUsed: '3-way',
-      ranAt: '17 Aug 2026, 09:20',
+      ranAt: at(2, 9, 20),
       duplicate: { state: 'pass' },
       metadata: { state: 'pending', findings: [] },
       lineItem: { state: 'pending', findings: [] },
@@ -474,13 +550,13 @@ export const INITIAL_INVOICES: Invoice[] = [
     },
     overrides: [],
     audit: [
-      audit('17 Aug 2026, 09:19', 'Ingested', 'Mailbox · Invoices/Inbound'),
-      audit('17 Aug 2026, 09:20', 'Extraction complete', 'Every mandatory field cleared its threshold'),
-      audit('17 Aug 2026, 09:20', 'Auto-advanced to matching'),
-      audit('17 Aug 2026, 09:20', 'Hard block', 'No GRN, and the match type is 3-way'),
+      audit(at(2, 9, 19), 'Ingested', 'Mailbox · Invoices/Inbound'),
+      audit(at(2, 9, 20), 'Extraction complete', 'Every mandatory field cleared its threshold'),
+      audit(at(2, 9, 20), 'Auto-advanced to matching'),
+      audit(at(2, 9, 20), 'Hard block', 'No GRN, and the match type is 3-way'),
     ],
-    ingestedAt: '17 Aug 2026, 09:19',
-    firstSurfacedAt: '17 Aug 2026, 09:20',
+    ingestedAt: at(2, 9, 19),
+    firstSurfacedAt: at(2, 9, 20),
     terminalAt: null,
   },
 
@@ -492,7 +568,7 @@ export const INITIAL_INVOICES: Invoice[] = [
     legalEntity: LEGAL_ENTITY,
     currency: 'USD',
     amount: 21900.0,
-    invoiceDate: '12 Aug 2026',
+    invoiceDate: at(7),
     poNumber: 'PO-US-44320',
     source: 'Upload',
     sourceId: 'src-upload-1',
@@ -502,7 +578,7 @@ export const INITIAL_INVOICES: Invoice[] = [
     status: 'Action Required',
     invoiceFields: invoiceFields({
       number: 'INV-44320',
-      date: '12 Aug 2026',
+      date: formatDate(at(7)),
       vendor: 'Cascade Industrial Parts',
       po: 'PO-US-44320',
       currency: 'USD',
@@ -517,15 +593,16 @@ export const INITIAL_INVOICES: Invoice[] = [
       'zoho',
     ),
     grnFields: grnFields(
-      { number: 'GRN-US-44320', poRef: 'PO-US-44320', receiptDate: '11 Aug 2026' },
+      { number: 'GRN-US-44320', poRef: 'PO-US-44320', receiptDate: formatDate(at(8)) },
       'uploaded',
     ),
     poSource: 'zoho',
     grnSource: 'uploaded',
-    lines: [line('l1', 'Conveyor belting — 600mm', 300, 300, 300, 73.0, '6500 — Repairs and maintenance', 'US-CA-SALES-7.25')],
+    lines: [line('l1', 'Conveyor belting — 600mm', 300, 300, 300, 73.0, '6500 · Repairs and maintenance', 'US-CA-SALES-7.25')],
+    attachments: [{ name: 'approval-email-44320.eml', kind: 'Supporting document' }],
     matchResult: {
       matchTypeUsed: '3-way',
-      ranAt: '12 Aug 2026, 16:41',
+      ranAt: at(7, 16, 41),
       duplicate: { state: 'pass' },
       metadata: {
         state: 'fail',
@@ -545,13 +622,13 @@ export const INITIAL_INVOICES: Invoice[] = [
     },
     overrides: [],
     audit: [
-      audit('12 Aug 2026, 16:40', 'Ingested', 'Upload · august-batch.zip'),
-      audit('12 Aug 2026, 16:41', 'Extraction complete'),
-      audit('12 Aug 2026, 16:41', 'Matching run', 'Duplicate passed. Line item passed. Metadata failed.'),
-      audit('12 Aug 2026, 16:41', 'Surfaced as Action Required', 'Invoice exceeds the remaining PO balance by 4,900.00'),
+      audit(at(7, 16, 40), 'Ingested', 'Upload · august-batch.zip'),
+      audit(at(7, 16, 41), 'Extraction complete'),
+      audit(at(7, 16, 41), 'Matching run', 'Duplicate passed. Line item passed. Metadata failed.'),
+      audit(at(7, 16, 41), 'Surfaced as Action Required', 'Invoice exceeds the remaining PO balance by 4,900.00'),
     ],
-    ingestedAt: '12 Aug 2026, 16:40',
-    firstSurfacedAt: '12 Aug 2026, 16:41',
+    ingestedAt: at(7, 16, 40),
+    firstSurfacedAt: at(7, 16, 41),
     terminalAt: null,
   },
 
@@ -563,7 +640,7 @@ export const INITIAL_INVOICES: Invoice[] = [
     legalEntity: LEGAL_ENTITY,
     currency: 'USD',
     amount: 2180.0,
-    invoiceDate: '11 Aug 2026',
+    invoiceDate: at(8),
     poNumber: 'PO-US-66004',
     source: 'Mailbox',
     sourceId: 'src-mail-1',
@@ -573,7 +650,7 @@ export const INITIAL_INVOICES: Invoice[] = [
     status: 'Posted',
     invoiceFields: invoiceFields({
       number: 'INV-66004',
-      date: '11 Aug 2026',
+      date: formatDate(at(8)),
       vendor: 'Redwood Office Supply',
       po: 'PO-US-66004',
       currency: 'USD',
@@ -587,15 +664,16 @@ export const INITIAL_INVOICES: Invoice[] = [
       'zoho',
     ),
     grnFields: grnFields(
-      { number: 'GRN-US-66004', poRef: 'PO-US-66004', receiptDate: '10 Aug 2026' },
+      { number: 'GRN-US-66004', poRef: 'PO-US-66004', receiptDate: formatDate(at(9)) },
       'uploaded',
     ),
     poSource: 'zoho',
     grnSource: 'uploaded',
-    lines: [line('l1', 'Filing cabinets — 4 drawer', 4, 4, 4, 545.0, '6200 — Office supplies')],
+    lines: [line('l1', 'Filing cabinets — 4 drawer', 4, 4, 4, 545.0, '6200 · Office supplies')],
+    attachments: [],
     matchResult: {
       matchTypeUsed: '3-way',
-      ranAt: '11 Aug 2026, 07:02',
+      ranAt: at(8, 7, 2),
       duplicate: { state: 'pass' },
       metadata: { state: 'pass', findings: [] },
       lineItem: { state: 'pass', findings: [] },
@@ -603,15 +681,15 @@ export const INITIAL_INVOICES: Invoice[] = [
     },
     overrides: [],
     audit: [
-      audit('11 Aug 2026, 07:01', 'Ingested', 'Mailbox · Invoices/Inbound'),
-      audit('11 Aug 2026, 07:02', 'Extraction complete', 'Every field cleared its threshold'),
-      audit('11 Aug 2026, 07:02', 'Matching run', 'All three checks passed'),
-      audit('11 Aug 2026, 07:02', 'Posted by straight-through processing', 'Never surfaced to a user. Zoho Books ZB-BILL-10442'),
+      audit(at(8, 7, 1), 'Ingested', 'Mailbox · Invoices/Inbound'),
+      audit(at(8, 7, 2), 'Extraction complete', 'Every field cleared its threshold'),
+      audit(at(8, 7, 2), 'Matching run', 'All three checks passed'),
+      audit(at(8, 7, 2), 'Posted by straight-through processing', 'Never surfaced to a user. Zoho Books ZB-BILL-10442'),
     ],
     erpReference: 'ZB-BILL-10442',
-    ingestedAt: '11 Aug 2026, 07:01',
+    ingestedAt: at(8, 7, 1),
     firstSurfacedAt: null,
-    terminalAt: '11 Aug 2026, 07:02',
+    terminalAt: at(8, 7, 2),
   },
 
   /* Surfaced, worked by a person, posted. Gives touch time something to measure. */
@@ -622,7 +700,7 @@ export const INITIAL_INVOICES: Invoice[] = [
     legalEntity: LEGAL_ENTITY,
     currency: 'USD',
     amount: 9340.0,
-    invoiceDate: '13 Aug 2026',
+    invoiceDate: at(6),
     poNumber: 'PO-US-33128',
     source: 'Upload',
     sourceId: 'src-upload-1',
@@ -632,7 +710,7 @@ export const INITIAL_INVOICES: Invoice[] = [
     status: 'Posted',
     invoiceFields: invoiceFields({
       number: 'INV-33128',
-      date: '13 Aug 2026',
+      date: formatDate(at(6)),
       vendor: 'Redwood Office Supply',
       po: 'PO-US-33128',
       currency: 'USD',
@@ -646,18 +724,19 @@ export const INITIAL_INVOICES: Invoice[] = [
       'zoho',
     ),
     grnFields: grnFields(
-      { number: 'GRN-US-33128', poRef: 'PO-US-33128', receiptDate: '12 Aug 2026' },
+      { number: 'GRN-US-33128', poRef: 'PO-US-33128', receiptDate: formatDate(at(7)) },
       'uploaded',
     ),
     poSource: 'zoho',
     grnSource: 'uploaded',
     lines: [
-      line('l1', 'Printer paper — A4 80gsm', 100, 100, 100, 58.0, '6200 — Office supplies'),
-      line('l2', 'Labels — thermal 4x6', 60, 60, 60, 59.0, '6200 — Office supplies'),
+      line('l1', 'Printer paper — A4 80gsm', 100, 100, 100, 58.0, '6200 · Office supplies'),
+      line('l2', 'Labels — thermal 4x6', 60, 60, 60, 59.0, '6200 · Office supplies'),
     ],
+    attachments: [],
     matchResult: {
       matchTypeUsed: '3-way',
-      ranAt: '13 Aug 2026, 10:26',
+      ranAt: at(6, 10, 26),
       duplicate: { state: 'pass' },
       metadata: { state: 'pass', findings: [] },
       lineItem: { state: 'pass', findings: [] },
@@ -667,21 +746,21 @@ export const INITIAL_INVOICES: Invoice[] = [
       {
         rule: 'Line item — quantity',
         reason: 'Short shipment agreed with the vendor; remaining 4 cartons cancelled on the PO.',
-        at: '13 Aug 2026, 10:31',
+        at: at(6, 10, 31),
         actor: 'Kaustav Dutta',
       },
     ],
     audit: [
-      audit('13 Aug 2026, 10:24', 'Ingested', 'Upload · august-batch.zip'),
-      audit('13 Aug 2026, 10:25', 'Extraction complete'),
-      audit('13 Aug 2026, 10:26', 'Matching run', 'Line item failed on quantity'),
-      audit('13 Aug 2026, 10:31', 'Override recorded', 'Line item — quantity. Reason given.', 'Kaustav Dutta'),
-      audit('13 Aug 2026, 10:33', 'Posted to Zoho Books', 'ZB-BILL-10488', 'Kaustav Dutta'),
+      audit(at(6, 10, 24), 'Ingested', 'Upload · august-batch.zip'),
+      audit(at(6, 10, 25), 'Extraction complete'),
+      audit(at(6, 10, 26), 'Matching run', 'Line item failed on quantity'),
+      audit(at(6, 10, 31), 'Override recorded', 'Line item — quantity. Reason given.', 'Kaustav Dutta'),
+      audit(at(6, 10, 33), 'Posted to Zoho Books', 'ZB-BILL-10488', 'Kaustav Dutta'),
     ],
     erpReference: 'ZB-BILL-10488',
-    ingestedAt: '13 Aug 2026, 10:24',
-    firstSurfacedAt: '13 Aug 2026, 10:26',
-    terminalAt: '13 Aug 2026, 10:33',
+    ingestedAt: at(6, 10, 24),
+    firstSurfacedAt: at(6, 10, 26),
+    terminalAt: at(6, 10, 33),
   },
 
   /* Terminal at Exported — downloaded before Zoho was connected. */
@@ -692,7 +771,7 @@ export const INITIAL_INVOICES: Invoice[] = [
     legalEntity: LEGAL_ENTITY,
     currency: 'USD',
     amount: 5602.4,
-    invoiceDate: '06 Aug 2026',
+    invoiceDate: at(13),
     poNumber: 'PO-US-55891',
     source: 'Upload',
     sourceId: 'src-upload-1',
@@ -702,7 +781,7 @@ export const INITIAL_INVOICES: Invoice[] = [
     status: 'Exported',
     invoiceFields: invoiceFields({
       number: 'INV-55891',
-      date: '06 Aug 2026',
+      date: formatDate(at(13)),
       vendor: 'Bayline Freight',
       po: 'PO-US-55891',
       currency: 'USD',
@@ -716,15 +795,16 @@ export const INITIAL_INVOICES: Invoice[] = [
       'uploaded',
     ),
     grnFields: grnFields(
-      { number: 'GRN-US-55891', poRef: 'PO-US-55891', receiptDate: '05 Aug 2026' },
+      { number: 'GRN-US-55891', poRef: 'PO-US-55891', receiptDate: formatDate(at(14)) },
       'uploaded',
     ),
     poSource: 'uploaded',
     grnSource: 'uploaded',
-    lines: [line('l1', 'Ocean freight — FCL 40ft', 1, 1, 1, 5602.4, '7100 — Freight and delivery')],
+    lines: [line('l1', 'Ocean freight — FCL 40ft', 1, 1, 1, 5602.4, '7100 · Freight and delivery')],
+    attachments: [],
     matchResult: {
       matchTypeUsed: '3-way',
-      ranAt: '06 Aug 2026, 13:10',
+      ranAt: at(13, 13, 10),
       duplicate: { state: 'pass' },
       metadata: { state: 'pass', findings: [] },
       lineItem: { state: 'pass', findings: [] },
@@ -732,14 +812,14 @@ export const INITIAL_INVOICES: Invoice[] = [
     },
     overrides: [],
     audit: [
-      audit('06 Aug 2026, 13:08', 'Ingested', 'Upload · august-batch.zip'),
-      audit('06 Aug 2026, 13:09', 'Extraction complete', 'PO and GRN read from uploaded documents'),
-      audit('06 Aug 2026, 13:10', 'Matching run', 'All three checks passed'),
-      audit('06 Aug 2026, 13:14', 'Exported', 'Matched-data CSV downloaded. No ERP connected at the time.', 'Shubham Shrivastava'),
+      audit(at(13, 13, 8), 'Ingested', 'Upload · august-batch.zip'),
+      audit(at(13, 13, 9), 'Extraction complete', 'PO and GRN read from uploaded documents'),
+      audit(at(13, 13, 10), 'Matching run', 'All three checks passed'),
+      audit(at(13, 13, 14), 'Exported', 'Matched-data CSV downloaded. No ERP connected at the time.', 'Shubham Shrivastava'),
     ],
-    ingestedAt: '06 Aug 2026, 13:08',
-    firstSurfacedAt: '06 Aug 2026, 13:10',
-    terminalAt: '06 Aug 2026, 13:14',
+    ingestedAt: at(13, 13, 8),
+    firstSurfacedAt: at(13, 13, 10),
+    terminalAt: at(13, 13, 14),
   },
 
   /* Closed by a person, with the reason on the record. */
@@ -750,7 +830,7 @@ export const INITIAL_INVOICES: Invoice[] = [
     legalEntity: LEGAL_ENTITY,
     currency: 'USD',
     amount: 1120.0,
-    invoiceDate: '10 Aug 2026',
+    invoiceDate: at(9),
     poNumber: 'PO-US-22016',
     source: 'Mailbox',
     sourceId: 'src-mail-2',
@@ -760,7 +840,7 @@ export const INITIAL_INVOICES: Invoice[] = [
     status: 'Rejected',
     invoiceFields: invoiceFields({
       number: 'INV-22016',
-      date: '10 Aug 2026',
+      date: formatDate(at(9)),
       vendor: 'Harbor Print Co',
       po: 'PO-US-22016',
       currency: 'USD',
@@ -777,16 +857,17 @@ export const INITIAL_INVOICES: Invoice[] = [
     grnFields: [],
     poSource: 'zoho',
     grnSource: 'none',
-    lines: [line('l1', 'Brochures — A5 gloss, 5000', 5000, 5000, null, 0.224, '7400 — Printing and marketing', 'US-CA-SALES-7.25')],
+    lines: [line('l1', 'Brochures — A5 gloss, 5000', 5000, 5000, null, 0.224, '7400 · Printing and marketing', 'US-CA-SALES-7.25')],
+    attachments: [],
     matchResult: {
       matchTypeUsed: '3-way',
-      ranAt: '10 Aug 2026, 15:02',
+      ranAt: at(9, 15, 2),
       duplicate: {
         state: 'fail',
         original: {
           number: 'INV-22016',
           vendor: 'Harbor Print Co',
-          date: '10 Aug 2026',
+          date: formatDate(at(9)),
           processedBy: 'Hemshankar Rao',
           metadataOnly: true,
         },
@@ -797,14 +878,14 @@ export const INITIAL_INVOICES: Invoice[] = [
     },
     overrides: [],
     audit: [
-      audit('10 Aug 2026, 15:01', 'Ingested', 'Mailbox · Invoices/Inbound'),
-      audit('10 Aug 2026, 15:02', 'Matching run', 'Duplicate hit. Metadata and line item skipped.'),
-      audit('10 Aug 2026, 15:44', 'Rejected', 'Already processed in AP — EMEA. Vendor re-sent in error.', 'Shubham Shrivastava'),
+      audit(at(9, 15, 1), 'Ingested', 'Mailbox · Invoices/Inbound'),
+      audit(at(9, 15, 2), 'Matching run', 'Duplicate hit. Metadata and line item skipped.'),
+      audit(at(9, 15, 44), 'Rejected', 'Already processed in AP EMEA. The vendor re-sent it in error.', 'Shubham Shrivastava'),
     ],
-    rejectReason: 'Already processed in AP — EMEA. Vendor re-sent in error.',
-    ingestedAt: '10 Aug 2026, 15:01',
-    firstSurfacedAt: '10 Aug 2026, 15:02',
-    terminalAt: '10 Aug 2026, 15:44',
+    rejectReason: 'Already processed in AP EMEA. The vendor re-sent it in error.',
+    ingestedAt: at(9, 15, 1),
+    firstSurfacedAt: at(9, 15, 2),
+    terminalAt: at(9, 15, 44),
   },
 ];
 
@@ -823,12 +904,12 @@ export const INITIAL_INVOICES: Invoice[] = [
  */
 export function buildSamples(batch: number): Invoice[] {
   const suffix = batch > 1 ? `-${batch}` : '';
-  const at = '19 Aug 2026, 09:00';
+  const ingestedAt = at(0, 9, 0);
 
   const cleanLines = [
-    line('l1', 'Copy paper — A4 80gsm, carton of 5', 40, 40, 40, 62.0, '6200 — Office supplies'),
-    line('l2', 'Toner cartridge — mono, high yield', 25, 25, 25, 240.0, '6200 — Office supplies'),
-    line('l3', 'Task chair — mesh back', 8, 8, 8, 500.0, '6200 — Office supplies'),
+    line('l1', 'Copy paper — A4 80gsm, carton of 5', 40, 40, 40, 62.0, '6200 · Office supplies'),
+    line('l2', 'Toner cartridge — mono, high yield', 25, 25, 25, 240.0, '6200 · Office supplies'),
+    line('l3', 'Task chair — mesh back', 8, 8, 8, 500.0, '6200 · Office supplies'),
   ];
 
   const clean: Invoice = {
@@ -838,7 +919,7 @@ export function buildSamples(batch: number): Invoice[] {
     legalEntity: LEGAL_ENTITY,
     currency: 'USD',
     amount: 12480.0,
-    invoiceDate: '14 Aug 2026',
+    invoiceDate: at(5),
     poNumber: `PO-US-88214${suffix}`,
     source: 'Sample',
     sourceId: `src-sample${suffix}`,
@@ -848,7 +929,7 @@ export function buildSamples(batch: number): Invoice[] {
     status: 'Extraction',
     invoiceFields: invoiceFields({
       number: `INV-2026-4417${suffix}`,
-      date: '14 Aug 2026',
+      date: formatDate(at(5)),
       vendor: 'Redwood Office Supply',
       po: `PO-US-88214${suffix}`,
       currency: 'USD',
@@ -867,21 +948,22 @@ export function buildSamples(batch: number): Invoice[] {
       'uploaded',
     ),
     grnFields: grnFields(
-      { number: `GRN-US-53301${suffix}`, poRef: `PO-US-88214${suffix}`, receiptDate: '13 Aug 2026' },
+      { number: `GRN-US-53301${suffix}`, poRef: `PO-US-88214${suffix}`, receiptDate: formatDate(at(6)) },
       'uploaded',
     ),
     poSource: 'uploaded',
     grnSource: 'uploaded',
     lines: cleanLines,
+    attachments: [],
     matchResult: null,
     overrides: [],
     audit: [
-      audit(at, 'Ingested', 'Pre-computed sample set · United States'),
-      audit(at, 'Extraction complete', 'Invoice, PO and GRN all read. Every field cleared its threshold.'),
-      audit(at, 'Held at extraction', 'Sample invoices show every stage rather than auto-advancing.'),
+      audit(ingestedAt, 'Ingested', 'Pre-computed sample set · United States'),
+      audit(ingestedAt, 'Extraction complete', 'Invoice, PO and GRN all read. Every field cleared its threshold.'),
+      audit(ingestedAt, 'Held at extraction', 'Sample invoices show every stage rather than auto-advancing.'),
     ],
-    ingestedAt: at,
-    firstSurfacedAt: at,
+    ingestedAt: ingestedAt,
+    firstSurfacedAt: ingestedAt,
     terminalAt: null,
   };
 
@@ -892,7 +974,7 @@ export function buildSamples(batch: number): Invoice[] {
     legalEntity: LEGAL_ENTITY,
     currency: 'USD',
     amount: 18639.0,
-    invoiceDate: '15 Aug 2026',
+    invoiceDate: at(4),
     poNumber: `PO-US-88301${suffix}`,
     source: 'Sample',
     sourceId: `src-sample${suffix}`,
@@ -902,7 +984,7 @@ export function buildSamples(batch: number): Invoice[] {
     status: 'Extraction',
     invoiceFields: invoiceFields({
       number: `INV-2026-4418${suffix}`,
-      date: '15 Aug 2026',
+      date: formatDate(at(4)),
       vendor: 'Cascade Industrial Parts',
       po: `PO-US-88301${suffix}`,
       currency: 'USD',
@@ -922,26 +1004,27 @@ export function buildSamples(batch: number): Invoice[] {
       'uploaded',
     ),
     grnFields: grnFields(
-      { number: `GRN-US-53302${suffix}`, poRef: `PO-US-88301${suffix}`, receiptDate: '14 Aug 2026' },
+      { number: `GRN-US-53302${suffix}`, poRef: `PO-US-88301${suffix}`, receiptDate: formatDate(at(5)) },
       'uploaded',
     ),
     poSource: 'uploaded',
     grnSource: 'uploaded',
     lines: [
-      line('l1', 'Hex bolt M12 — zinc, box of 100', 500, 500, 500, 1.85, '6500 — Repairs and maintenance', 'US-CA-SALES-7.25'),
+      line('l1', 'Hex bolt M12 — zinc, box of 100', 500, 500, 500, 1.85, '6500 · Repairs and maintenance', 'US-CA-SALES-7.25'),
       // Invoiced 120, ordered and received 100. The deliberate variance.
-      line('l2', 'Bearing assembly — 6205-2RS', 120, 100, 100, 142.5, '6500 — Repairs and maintenance', 'US-CA-SALES-7.25'),
-      line('l3', 'Gasket — nitrile, 80mm', 200, 200, 200, 3.07, '6500 — Repairs and maintenance', 'US-CA-SALES-7.25'),
+      line('l2', 'Bearing assembly — 6205-2RS', 120, 100, 100, 142.5, '6500 · Repairs and maintenance', 'US-CA-SALES-7.25'),
+      line('l3', 'Gasket — nitrile, 80mm', 200, 200, 200, 3.07, '6500 · Repairs and maintenance', 'US-CA-SALES-7.25'),
     ],
+    attachments: [],
     matchResult: null,
     overrides: [],
     audit: [
-      audit(at, 'Ingested', 'Pre-computed sample set · United States'),
-      audit(at, 'Extraction complete', 'Invoice, PO and GRN all read.'),
-      audit(at, 'Held at extraction', 'Sample invoices show every stage rather than auto-advancing.'),
+      audit(ingestedAt, 'Ingested', 'Pre-computed sample set · United States'),
+      audit(ingestedAt, 'Extraction complete', 'Invoice, PO and GRN all read.'),
+      audit(ingestedAt, 'Held at extraction', 'Sample invoices show every stage rather than auto-advancing.'),
     ],
-    ingestedAt: at,
-    firstSurfacedAt: at,
+    ingestedAt: ingestedAt,
+    firstSurfacedAt: ingestedAt,
     terminalAt: null,
   };
 
@@ -950,16 +1033,16 @@ export function buildSamples(batch: number): Invoice[] {
   const duplicate: Invoice = {
     ...clean,
     id: `sample-duplicate${suffix}`,
-    invoiceDate: '14 Aug 2026',
+    invoiceDate: at(5),
     sourceId: `src-sample${suffix}`,
     audit: [
-      audit(at, 'Ingested', 'Pre-computed sample set · United States'),
-      audit(at, 'Extraction complete', 'Same invoice number, vendor and legal entity as the first sample.'),
-      audit(at, 'Held at extraction', 'Sample invoices show every stage rather than auto-advancing.'),
+      audit(ingestedAt, 'Ingested', 'Pre-computed sample set · United States'),
+      audit(ingestedAt, 'Extraction complete', 'Same invoice number, vendor and legal entity as the first sample.'),
+      audit(ingestedAt, 'Held at extraction', 'Sample invoices show every stage rather than auto-advancing.'),
     ],
     invoiceFields: invoiceFields({
       number: `INV-2026-4417${suffix}`,
-      date: '14 Aug 2026',
+      date: formatDate(at(5)),
       vendor: 'Redwood Office Supply',
       po: `PO-US-88214${suffix}`,
       currency: 'USD',
@@ -974,9 +1057,123 @@ export function buildSamples(batch: number): Invoice[] {
   return [clean, variance, duplicate];
 }
 
+/**
+ * An invoice record built from files the user actually chose. The extracted
+ * values are representative rather than read from the file, but the filenames,
+ * the document types and the invoice number all come from what they uploaded.
+ */
+export function buildFromUpload(input: {
+  invoiceFile: string;
+  poFile?: string;
+  grnFile?: string;
+  attachments: { name: string; kind: 'Tax document' | 'Supporting document' }[];
+  sourceId: string;
+  index: number;
+  /** Decides whether an unmatched PO or receipt can be fetched instead. */
+  connections: Connections;
+}): Invoice {
+  const stampedAt = at(0, NOW.getHours(), NOW.getMinutes());
+  const { connections } = input;
+  const base = input.invoiceFile.replace(/\.[^.]+$/, '');
+  // Use a number from the filename where there is one, so the record matches
+  // the document the user recognises.
+  const digits = base.match(/\d{3,}/)?.[0];
+  const number = digits ? `INV-${digits}` : `INV-${base.slice(0, 18).toUpperCase()}`;
+  const quantity = 20 + input.index * 5;
+  const unitPrice = 62.0;
+  const total = Number((quantity * unitPrice).toFixed(2));
+
+  /**
+   * These are PO-based invoices, so the number is on the invoice face whether or
+   * not the user uploaded the purchase order. Where it resolves from follows the
+   * PRD's order: the document they gave us, then Zoho, then nowhere, which is a
+   * hard block they can clear by typing the number or attaching the file.
+   */
+  const poNumber = `PO-US-${digits ?? '91004'}`;
+  const poSource: RefSource = input.poFile ? 'uploaded' : connections.zohoBooks ? 'zoho' : 'none';
+  // Receipts live in Inventory, so Books alone cannot supply one.
+  const grnSource: RefSource = input.grnFile
+    ? 'uploaded'
+    : connections.zohoInventory
+      ? 'zoho'
+      : 'none';
+  const grnQuantity = grnSource === 'none' ? null : quantity;
+
+  return {
+    id: `inv-upload-${input.sourceId}-${input.index}`,
+    number,
+    vendor: 'Redwood Office Supply',
+    legalEntity: LEGAL_ENTITY,
+    currency: 'USD',
+    amount: total,
+    invoiceDate: at(0),
+    poNumber,
+    source: 'Upload',
+    sourceId: input.sourceId,
+    isSample: false,
+    stpPosted: false,
+    stage: 'extraction',
+    status: 'Action Required',
+    invoiceFields: invoiceFields(
+      {
+        number,
+        date: formatDate(at(0)),
+        vendor: 'REDWOOD OFFICE SUPPLY CO',
+        po: poNumber,
+        currency: 'USD',
+        subtotal: total.toFixed(2),
+        tax: '0.00',
+        total: total.toFixed(2),
+        remitTo: '18 Cedar St, Sacramento CA 95814',
+      },
+      { vendor: 71, subtotal: 80 },
+    ),
+    poFields:
+      poSource === 'none'
+        ? []
+        : poFields(
+            { number: poNumber, vendor: 'Redwood Office Supply', currency: 'USD', total: total.toFixed(2) },
+            poSource,
+            { poTotal: 82 },
+          ),
+    grnFields:
+      grnSource === 'none'
+        ? []
+        : grnFields(
+            { number: `GRN-US-${digits ?? '91004'}`, poRef: poNumber, receiptDate: formatDate(at(1)) },
+            grnSource,
+          ),
+    poSource,
+    grnSource,
+    lines: [
+      line('l1', 'Copy paper — A4 80gsm, carton of 5', quantity, quantity, grnQuantity, unitPrice, ''),
+    ],
+    attachments: input.attachments,
+    matchResult: null,
+    overrides: [],
+    audit: [
+      audit(stampedAt, 'Ingested', `Upload · ${input.invoiceFile}`),
+      audit(stampedAt, 'Extraction started'),
+      audit(
+        stampedAt,
+        'Purchase order resolved',
+        poSource === 'uploaded'
+          ? `Read from ${input.poFile}`
+          : poSource === 'zoho'
+            ? `${poNumber} fetched from Zoho Books`
+            : `${poNumber} is on the invoice, but no purchase order was supplied`,
+      ),
+      audit(stampedAt, 'Surfaced as Action Required', 'Fields below the confidence threshold'),
+    ],
+    ingestedAt: stampedAt,
+    firstSurfacedAt: stampedAt,
+    terminalAt: null,
+  };
+}
+
 /** An uploaded invoice, for the queue's Upload action. */
 export function buildUpload(batch: number): Invoice {
-  const at = stampNow();
+  const stampedAt = at(0, NOW_HOUR, NOW_MINUTE);
   const n = 91000 + batch;
   return {
     id: `inv-upload-${n}`,
@@ -985,7 +1182,7 @@ export function buildUpload(batch: number): Invoice {
     legalEntity: LEGAL_ENTITY,
     currency: 'USD',
     amount: 4265.0,
-    invoiceDate: '19 Aug 2026',
+    invoiceDate: at(0),
     poNumber: 'PO-US-91004',
     source: 'Upload',
     sourceId: 'src-upload-1',
@@ -996,7 +1193,7 @@ export function buildUpload(batch: number): Invoice {
     invoiceFields: invoiceFields(
       {
         number: `INV-${n}`,
-        date: '19 Aug 2026',
+        date: formatDate(at(0)),
         vendor: 'REDWOOD OFFICE SUPPLY CO',
         po: 'PO-US-91004',
         currency: 'USD',
@@ -1014,7 +1211,7 @@ export function buildUpload(batch: number): Invoice {
       { poTotal: 82 },
     ),
     grnFields: grnFields(
-      { number: 'GRN-US-91004', poRef: 'PO-US-91004', receiptDate: '18 Aug 2026' },
+      { number: 'GRN-US-91004', poRef: 'PO-US-91004', receiptDate: formatDate(at(1)) },
       'uploaded',
     ),
     poSource: 'uploaded',
@@ -1023,22 +1220,148 @@ export function buildUpload(batch: number): Invoice {
       line('l1', 'Copy paper — A4 80gsm, carton of 5', 35, 35, 35, 62.0, '', 'US-EXEMPT'),
       line('l2', 'Whiteboard marker — assorted, box of 12', 45, 45, 45, 45.0, '', 'US-EXEMPT'),
     ],
+    attachments: [],
     matchResult: null,
     overrides: [],
     audit: [
-      audit(at, 'Ingested', 'Upload · invoice + PO + GRN'),
-      audit(at, 'Extraction started'),
-      audit(at, 'Surfaced as Action Required', '3 fields below the threshold'),
+      audit(stampedAt, 'Ingested', 'Upload · invoice + PO + GRN'),
+      audit(stampedAt, 'Extraction started'),
+      audit(stampedAt, 'Surfaced as Action Required', '3 fields below the threshold'),
     ],
-    ingestedAt: at,
-    firstSurfacedAt: at,
+    ingestedAt: stampedAt,
+    firstSurfacedAt: stampedAt,
     terminalAt: null,
   };
 }
 
-function stampNow(): string {
-  const now = new Date();
-  const hh = String(now.getHours()).padStart(2, '0');
-  const mm = String(now.getMinutes()).padStart(2, '0');
-  return `19 Aug 2026, ${hh}:${mm}`;
+
+
+/* ── Indexed documents (Ask Neo) ──────────────────────────────────────── */
+
+/**
+ * Deliberately long. A 214-page master agreement is the point: a general
+ * assistant refuses it, and answering across the whole thing with a page
+ * reference is the capability being sold.
+ */
+export const INDEXED_DOCUMENTS: IndexedDocument[] = [
+  {
+    id: 'doc-msa-redwood',
+    name: 'FY26 Master Services Agreement — Redwood Office Supply.pdf',
+    pages: 214,
+    kind: 'Contract',
+    indexedAt: at(7),
+    origin: 'Upload',
+    passages: [
+      {
+        topics: ['payment terms', 'net', 'terms', 'due', 'payment'],
+        page: 18,
+        text: 'Payment terms are Net 45 from invoice receipt, not invoice date. A 2% early-settlement discount applies where payment clears within 10 days.',
+      },
+      {
+        topics: ['price', 'pricing', 'increase', 'uplift', 'escalation'],
+        page: 61,
+        text: 'Unit prices are fixed for the first twelve months. Any increase after that is capped at CPI or 4%, whichever is lower, and needs 60 days written notice.',
+      },
+      {
+        topics: ['tolerance', 'variance', 'short', 'shipment', 'quantity'],
+        page: 97,
+        text: 'Quantity variance up to 2% on a shipment is accepted without amendment. Anything beyond that requires a credit note against the original invoice.',
+      },
+      {
+        topics: ['dispute', 'reject', 'rejection', 'query'],
+        page: 143,
+        text: 'An invoice must be disputed within 30 days of receipt. After that it is deemed accepted, whether or not it was matched.',
+      },
+    ],
+  },
+  {
+    id: 'doc-ap-policy',
+    name: 'AP policy and approval matrix.pdf',
+    pages: 38,
+    kind: 'Policy',
+    indexedAt: at(10),
+    origin: 'Upload',
+    passages: [
+      {
+        topics: ['approval', 'threshold', 'sign-off', 'limit', 'authority'],
+        page: 7,
+        text: 'Invoices up to $10,000 need no second approver. Between $10,000 and $50,000 a finance lead signs off. Above $50,000 the CFO signs off.',
+      },
+      {
+        topics: ['override', 'exception', 'reason'],
+        page: 12,
+        text: 'Any tolerance override must carry a written reason naming the counterparty agreement it relies on. Overrides are reviewed monthly.',
+      },
+      {
+        topics: ['duplicate', 'payment', 'twice'],
+        page: 22,
+        text: 'Duplicate payment is the single largest leakage risk. Detection runs across all entities, and a suspected duplicate is never paid pending written confirmation.',
+      },
+    ],
+  },
+  {
+    id: 'doc-vendor-handbook',
+    name: 'Vendor onboarding handbook.pdf',
+    pages: 92,
+    kind: 'Handbook',
+    indexedAt: at(14),
+    origin: 'Mailbox',
+    passages: [
+      {
+        topics: ['onboarding', 'vendor', 'new', 'setup'],
+        page: 14,
+        text: 'A new vendor needs a signed W-9, banking details verified by callback, and a named business owner before the first PO is raised.',
+      },
+      {
+        topics: ['tax', 'vat', 'wht', 'withholding', '1099'],
+        page: 44,
+        text: 'US vendors classified as contractors are subject to 1099-NEC reporting. Backup withholding of 24% applies where the TIN is missing or unmatched.',
+      },
+    ],
+  },
+];
+
+/** An uploaded document, for the Ask Neo upload action. */
+export function buildUploadedDocument(batch: number): IndexedDocument {
+  const variants = [
+    {
+      name: 'Q3 vendor contract bundle.pdf',
+      pages: 187,
+      kind: 'Contract' as const,
+      passages: [
+        {
+          topics: ['freight', 'delivery', 'shipping', 'incoterms'],
+          page: 63,
+          text: 'Freight is DAP destination. Fuel surcharges are recoverable only where quoted on the original PO.',
+        },
+        {
+          topics: ['termination', 'notice', 'exit'],
+          page: 121,
+          text: 'Either party may terminate for convenience on 90 days written notice. Open POs are honored to completion.',
+        },
+      ],
+    },
+    {
+      name: 'Group tax memorandum FY26.pdf',
+      pages: 156,
+      kind: 'Report' as const,
+      passages: [
+        {
+          topics: ['tax', 'nexus', 'sales tax', 'state'],
+          page: 29,
+          text: 'Economic nexus is established in 14 states. Sales tax is self-assessed where the vendor does not charge it, and coded to use tax.',
+        },
+      ],
+    },
+  ];
+  const pick = variants[(batch - 1) % variants.length];
+  return {
+    id: `doc-upload-${batch}`,
+    name: pick.name,
+    pages: pick.pages,
+    kind: pick.kind,
+    indexedAt: at(0),
+    origin: 'Upload',
+    passages: pick.passages,
+  };
 }

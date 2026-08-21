@@ -25,15 +25,18 @@ import {
   SealCheckIcon,
   WarningIcon,
 } from '@neofloai/atoms/icons';
+import { VISIBILITY_COPY } from '../data';
 import { useStore } from '../store';
 import { PageBody, SectionCard } from '../components/common';
 import { ShellBar } from '../components/shell';
 import { money } from '../engine';
+import { formatRelative } from '../clock';
+import type { WorkspaceVisibility } from '../types';
 
 /* ── Workflow configuration ───────────────────────────────────────────── */
 
-export function ConfigScreen() {
-  const { config, updateConfig, memory, invoices } = useStore();
+export function WorkflowConfigScreen() {
+  const { config, updateConfig, memory, invoices, connections, goTo } = useStore();
 
   const midProcessing = invoices.filter(
     (i) => i.status === 'Action Required' || i.status === 'Extraction' || i.status === 'Matching',
@@ -49,17 +52,16 @@ export function ConfigScreen() {
               Workflow configuration
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Invoice Processing, in this workspace. Editable by a workflow admin, the workspace
-              owner, and a tenant owner who is a member here. Every parameter ships with a working
-              default.
+              How Invoice Processing reads and matches invoices. Integrations and joining are in
+              Workspace.
             </Typography>
           </Stack>
 
           <Alert severity="info" title="Changes look forward">
-            A new setting reaches whatever runs after it — newly ingested invoices, and any stage
-            re-run on an existing one. Results already produced are not re-evaluated, so widening a
-            tolerance does not retrospectively clear invoices already flagged.
-            {midProcessing > 0 && ` ${midProcessing} invoices are mid-processing right now.`}
+            Changes apply to invoices ingested from now on, and to any stage you re-run. Invoices
+            already flagged stay flagged until their stage runs again.
+            {midProcessing > 0 &&
+              ` ${midProcessing} invoice${midProcessing === 1 ? ' is' : 's are'} mid-processing.`}
           </Alert>
 
           <SectionCard
@@ -70,21 +72,19 @@ export function ConfigScreen() {
               value={config.matchType}
               onChange={(event) => updateConfig({ matchType: event.target.value as '2-way' | '3-way' })}
             >
-              <Radio value="3-way" label="3-way — invoice against the PO and the goods receipt (default)" />
-              <Radio value="2-way" label="2-way — invoice against the PO only" />
+              <Radio value="3-way" label="3-way: invoice against the PO and the goods receipt (default)" />
+              <Radio value="2-way" label="2-way: invoice against the PO only" />
             </RadioGroup>
 
-            <Alert severity="info" title="Why 3-way is the default" floating>
-              It is the stricter of the two, and starting strict is recoverable in one click. A
-              workspace silently defaulted to 2-way might never notice that receipts were going
-              unchecked — which is invisible and permanent. Match type is a workspace-level decision
-              applied uniformly, never varied invoice by invoice.
-            </Alert>
+            <Typography variant="caption" color="text.secondary">
+              Applies uniformly to everything that runs after you change it. It is never varied for
+              one invoice.
+            </Typography>
           </SectionCard>
 
           <SectionCard
             title="Confidence"
-            description="One threshold, applied to invoice fields and reference-document fields alike. Below it, a field is flagged and matching will not run until it is acknowledged or corrected."
+            description="Fields read below this are flagged, and matching waits until you acknowledge or correct them. Applies to invoices and reference documents alike."
           >
             <Stack sx={{ gap: 1, maxWidth: 520 }}>
               <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
@@ -105,8 +105,7 @@ export function ConfigScreen() {
                 onChange={(_, value) => updateConfig({ confidenceThreshold: value as number })}
               />
               <Typography variant="caption" color="text.secondary">
-                No confidence floor rejects a document outright. A poor scan is usable — you fix what
-                the OCR got wrong.
+                Nothing is rejected for a poor scan. You correct what it got wrong.
               </Typography>
             </Stack>
           </SectionCard>
@@ -118,7 +117,7 @@ export function ConfigScreen() {
             <Grid container spacing={3}>
               <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField
-                  label="Total tolerance — absolute"
+                  label="Total tolerance (amount)"
                   value={String(config.totalToleranceAbsolute)}
                   onChange={(event) =>
                     updateConfig({ totalToleranceAbsolute: Number(event.target.value) || 0 })
@@ -129,7 +128,7 @@ export function ConfigScreen() {
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField
-                  label="Total tolerance — percentage"
+                  label="Total tolerance (%)"
                   value={String(config.totalTolerancePercent)}
                   onChange={(event) =>
                     updateConfig({ totalTolerancePercent: Number(event.target.value) || 0 })
@@ -140,7 +139,7 @@ export function ConfigScreen() {
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField
-                  label="Line tolerance — absolute"
+                  label="Line tolerance (amount)"
                   value={String(config.lineToleranceAbsolute)}
                   onChange={(event) =>
                     updateConfig({ lineToleranceAbsolute: Number(event.target.value) || 0 })
@@ -151,7 +150,7 @@ export function ConfigScreen() {
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField
-                  label="Line tolerance — percentage"
+                  label="Line tolerance (%)"
                   value={String(config.lineTolerancePercent)}
                   onChange={(event) =>
                     updateConfig({ lineTolerancePercent: Number(event.target.value) || 0 })
@@ -212,17 +211,39 @@ export function ConfigScreen() {
                   onChange={(_, checked) => updateConfig({ straightThrough: checked })}
                 />
                 <Typography variant="caption" color="text.secondary" sx={{ ml: 6 }}>
-                  Clean invoice, ERP connected, nothing flagged — it posts on its own and never
-                  surfaces. Requires a connected ERP and is otherwise inert. Memory learns nothing on
-                  this path, since no correction means no acknowledgement.
+                  With a clean invoice, a connected ERP and nothing flagged, it posts on its own and
+                  never surfaces. Memory learns nothing on this path, since no correction means no
+                  acknowledgment.
                 </Typography>
               </Stack>
+
+              {/* On rather than off, but with nowhere to post: worth saying out
+                  loud, because the setting reads as active and is not. */}
+              {config.straightThrough && !connections.zohoBooks && (
+                <Alert
+                  severity="warning"
+                  title="Straight-through processing is on, but inert"
+                  action={
+                    <Button
+                      variant="secondary"
+                      appearance="outline"
+                      size="sm"
+                      onClick={() => goTo('workspace-config')}
+                      sx={{ whiteSpace: 'nowrap' }}
+                    >
+                      Connect an ERP
+                    </Button>
+                  }
+                >
+                  No ERP is connected, so every invoice will surface at ERP posting for you to download.
+                </Alert>
+              )}
             </Stack>
           </SectionCard>
 
           <SectionCard
-            title="Vendor normalisation"
-            description="A shipped library covers legal-entity suffixes, punctuation, casing and whitespace — no abbreviation list is asked of you. Confirming a flagged pair stores it through memory."
+            title="Vendor normalization"
+            description="Legal-entity suffixes, punctuation, casing and whitespace are ignored when comparing vendor names. Confirming a flagged pair teaches it for next time."
           >
             <Stack sx={{ gap: 1, maxWidth: 520 }}>
               <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
@@ -242,7 +263,7 @@ export function ConfigScreen() {
 
           <SectionCard
             title="Duplicate detection"
-            description="Tenant-wide, across every workspace and workflow — the same invoice must not be paid twice anywhere in the organisation. Keys are fixed in this version."
+            description="Runs across every workspace and workflow in your organization, so the same invoice cannot be paid twice anywhere."
           >
             <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
               {config.duplicateKeys.map((key) => (
@@ -253,12 +274,12 @@ export function ConfigScreen() {
 
           <SectionCard
             title="Memory"
-            description="The user acknowledges a correction, a streak builds, and past the threshold it becomes a memory that suggests. No candidate queue and no approver — in a small team the approver is the person doing the work."
+            description="Acknowledge the same correction enough times and it is remembered, then offered back on that field as a suggestion you accept."
           >
             <Stack sx={{ gap: 3 }}>
               <Stack sx={{ gap: 1, maxWidth: 520 }}>
                 <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography variant="body2">Acknowledgements before a memory forms</Typography>
+                  <Typography variant="body2">Acknowledgments before a memory forms</Typography>
                   <Chip size="sm" variant="primary" label={config.memoryThreshold} />
                 </Stack>
                 <Slider
@@ -299,7 +320,7 @@ export function ConfigScreen() {
                             label={live ? `Live · ${pattern.streak}` : `${pattern.streak} of ${config.memoryThreshold}`}
                           />
                         </TableCell>
-                        <TableCell align="right">{pattern.lastSeen}</TableCell>
+                        <TableCell align="right">{formatRelative(pattern.lastSeen)}</TableCell>
                       </TableRow>
                     );
                   })}
@@ -307,18 +328,12 @@ export function ConfigScreen() {
               </Table>
 
               <Typography variant="caption" color="text.secondary">
-                Learnable fields are fixed: GL code, VAT, WHT, vendor mapping, and extraction and
-                metadata corrections. Per-transaction fields — invoice number, invoice date, PO number
-                — are never learned. Scope is this workflow instance: nothing is shared across
-                workspaces or with other workflows.
+                Neoflo learns GL, VAT and WHT codes, vendor names, and extraction corrections. It never
+                learns per-invoice values such as an invoice number or date, and nothing is shared
+                with another workspace.
               </Typography>
             </Stack>
           </SectionCard>
-
-          <Alert severity="warning" title="Not decided in the prototype">
-            Configuration defaults, tax codes per country and the pre-computed reference data are
-            provided separately by the SME before build. The numbers above stand in for them.
-          </Alert>
         </Stack>
       </PageBody>
     </>
@@ -327,8 +342,16 @@ export function ConfigScreen() {
 
 /* ── Connections ──────────────────────────────────────────────────────── */
 
-export function ConnectionsScreen() {
-  const { connections, updateConnections, config, invoices } = useStore();
+export function WorkspaceConfigScreen() {
+  const {
+    connections,
+    updateConnections,
+    config,
+    invoices,
+    profile,
+    workspaceVisibility,
+    setWorkspaceVisibility,
+  } = useStore();
 
   const atPosting = invoices.filter((i) => i.stage === 'posting' && i.status === 'ERP posting').length;
 
@@ -339,11 +362,11 @@ export function ConnectionsScreen() {
         <Stack sx={{ gap: 3 }}>
           <Stack sx={{ gap: 0.5 }}>
             <Typography variant="h3" component="h1">
-              Connections
+              Workspace configuration
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Each workspace connects its own ERP instance and its own mailbox, set up by the
-              workspace owner or the tenant owner.
+              Integrations and joining for {profile.workspaceName || 'this workspace'}, shared by every
+              workflow in it. Match type and tolerances are in Workflow.
             </Typography>
           </Stack>
 
@@ -370,8 +393,8 @@ export function ConnectionsScreen() {
                   }
                 />
                 <Typography variant="caption" color="text.secondary" sx={{ ml: 6 }}>
-                  Purchase orders, bills, chart of accounts, vendor master and tax codes are read.
-                  The bill is written back to Books.
+                  Neoflo reads purchase orders, bills, your chart of accounts and tax codes, and writes
+                  the finished bill back.
                 </Typography>
               </Stack>
 
@@ -389,18 +412,16 @@ export function ConnectionsScreen() {
 
               {connections.zohoBooks && !connections.zohoInventory && config.matchType === '3-way' && (
                 <Alert severity="warning" title="3-way needs Inventory for receipts">
-                  On Books alone, a 3-way match only works from uploaded GRN documents. Anything with
-                  no receipt raised will hard block until you upload one, or lower the match type to
-                  2-way.
+                  Without Inventory, a 3-way match needs the goods receipt uploaded as a document.
+                  Anything without one will block.
                 </Alert>
               )}
 
               {!connections.zohoBooks && (
                 <Alert severity="info" title="No ERP is a supported answer">
-                  Match against an uploaded PO and download the matched-data CSV instead. The export
-                  path is first-class, not a downgrade.
+                  Match against an uploaded purchase order and download the results as a CSV.
                   {atPosting > 0 &&
-                    ` ${atPosting} invoice${atPosting === 1 ? '' : 's'} sitting at the posting stage will stay there — download becomes available, posting is disabled, and straight-through processing goes inert.`}
+                    ` ${atPosting} invoice${atPosting === 1 ? '' : 's'} sitting at the posting stage will stay there. Download becomes available, posting is disabled, and straight-through processing goes inert.`}
                 </Alert>
               )}
             </Stack>
@@ -408,7 +429,7 @@ export function ConnectionsScreen() {
 
           <SectionCard
             title="Mailbox"
-            description="You connect your own Gmail or Outlook and nominate one folder or label — in practice the invoice folder of a shared AP mailbox. Only what lands there is read."
+            description="Connect Gmail or Outlook and pick one folder. Neoflo reads only what lands there."
             action={
               connections.mailboxProvider ? (
                 <Chip size="sm" variant="success" icon={<EnvelopeSimpleIcon size={12} />} label="Connected" />
@@ -454,7 +475,7 @@ export function ConnectionsScreen() {
                       label="Mailbox"
                       value={connections.mailboxAddress}
                       onChange={(event) => updateConnections({ mailboxAddress: event.target.value })}
-                      helperText="Your own mailbox, not an address Neoflo issues."
+                      helperText="The mailbox Neoflo reads from."
                       fullWidth
                     />
                   </Grid>
@@ -463,27 +484,86 @@ export function ConnectionsScreen() {
                       label="Folder or label"
                       value={connections.mailboxFolder}
                       onChange={(event) => updateConnections({ mailboxFolder: event.target.value })}
-                      helperText="Mail outside this folder is never read."
+                      helperText="Only this folder is read."
                       fullWidth
                     />
                   </Grid>
                 </Grid>
               )}
-
-              <Alert severity="info" title="The folder is the signal">
-                Neoflo does not judge what an email is for — it processes what you have already filed
-                as an invoice. That is what lets this version ship with no intent detection on the
-                mail itself.
-              </Alert>
             </Stack>
           </SectionCard>
 
-          <Alert severity="info" title="One grant, two consumers">
-            Ask Neo already connects a mailbox at workspace level, and invoice ingestion now connects
-            one too. This should be a single OAuth grant with two consumers rather than two grants —
-            flagged for engineering before build. Whether connecting a folder pulls in mail already
-            sitting there, or only what arrives after, is also still open.
-          </Alert>
+          <SectionCard
+            title="Ticketing"
+            description="For invoices that arrive as tickets rather than mail. Ask Neo can answer from them too."
+            action={
+              connections.ticketing ? (
+                <Chip size="sm" variant="success" icon={<PlugsConnectedIcon size={12} />} label="Connected" />
+              ) : (
+                <Chip size="sm" variant="secondary" label="Not connected" />
+              )
+            }
+          >
+            <Stack sx={{ gap: 2 }}>
+              <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
+                <Button
+                  variant={connections.ticketing === 'freshdesk' ? 'primary' : 'secondary'}
+                  appearance={connections.ticketing === 'freshdesk' ? 'contained' : 'outline'}
+                  size="sm"
+                  onClick={() => updateConnections({ ticketing: 'freshdesk' })}
+                >
+                  Freshdesk
+                </Button>
+                <Button
+                  variant={connections.ticketing === 'zendesk' ? 'primary' : 'secondary'}
+                  appearance={connections.ticketing === 'zendesk' ? 'contained' : 'outline'}
+                  size="sm"
+                  onClick={() => updateConnections({ ticketing: 'zendesk' })}
+                >
+                  Zendesk
+                </Button>
+                {connections.ticketing && (
+                  <Button
+                    variant="error"
+                    appearance="text"
+                    size="sm"
+                    onClick={() => updateConnections({ ticketing: null })}
+                  >
+                    Disconnect
+                  </Button>
+                )}
+              </Stack>
+              <Typography variant="caption" color="text.secondary">
+                Optional. Upload and mailbox cover most teams.
+              </Typography>
+            </Stack>
+          </SectionCard>
+
+          <SectionCard
+            title="Who can join"
+            description="Who from your organization can get into this workspace."
+          >
+            <RadioGroup
+              value={workspaceVisibility}
+              onChange={(event) => setWorkspaceVisibility(event.target.value as WorkspaceVisibility)}
+            >
+              {(['public', 'approval', 'private'] as WorkspaceVisibility[]).map((option) => (
+                <Stack key={option} sx={{ gap: 0, mb: 1.5 }}>
+                  <Radio value={option} label={VISIBILITY_COPY[option].label} />
+                  <Typography variant="caption" color="text.secondary" sx={{ ml: 3.5 }}>
+                    {VISIBILITY_COPY[option].detail}
+                  </Typography>
+                </Stack>
+              ))}
+            </RadioGroup>
+
+            {workspaceVisibility === 'private' && (
+              <Alert severity="info" floating title="Nobody can find this workspace now">
+                Same-domain colleagues will not see it on the screen they meet after signing up.
+                Invite them by email instead.
+              </Alert>
+            )}
+          </SectionCard>
         </Stack>
       </PageBody>
     </>

@@ -10,6 +10,15 @@ export type SignupMethod = 'google' | 'password';
 /** Which of the four routing paths in Signup PRD §3 the user came in on. */
 export type RoutePath = 'first-of-domain' | 'joined' | 'created-own' | 'invited';
 
+/** What the signup form worked out about an address before submitting it. */
+export type DomainVerdict =
+  /** The domain already has a tenant, so workspaces may be offered. */
+  | 'existing-tenant'
+  /** Nobody from this domain has signed up, so a tenant gets created. */
+  | 'first-of-domain'
+  /** A free provider. Never a join key, so it always forms its own tenant. */
+  | 'personal-provider';
+
 export type Screen =
   | 'signup'
   | 'routing'
@@ -17,17 +26,26 @@ export type Screen =
   | 'ask-neo'
   | 'queue'
   | 'invoice'
-  | 'config'
-  | 'connections'
+  /** Workflow-level: match type, tolerances, thresholds, memory. */
+  | 'workflow-config'
+  /** Workspace-level: integrations, and who can join. */
+  | 'workspace-config'
   | 'members'
   | 'reporting';
+
+/**
+ * Who can join a workspace. Public by default, so a colleague who signs up
+ * lands somewhere useful instead of stalling. Private is the setting managed
+ * tenants run on (Signup PRD §10).
+ */
+export type WorkspaceVisibility = 'public' | 'approval' | 'private';
 
 export interface DiscoverableWorkspace {
   id: string;
   name: string;
   owner: string;
   members: number;
-  autoApprove: boolean;
+  visibility: WorkspaceVisibility;
 }
 
 /* ── Workflow ─────────────────────────────────────────────────────────── */
@@ -45,6 +63,9 @@ export type InvoiceStatus =
   | 'Rejected';
 
 export type SourceKind = 'Upload' | 'Mailbox' | 'Sample';
+
+/** How an uploaded file is read. Guessed from the filename, changeable by hand. */
+export type DocumentKind = 'invoice' | 'po' | 'grn' | 'tax' | 'supporting';
 
 export type CheckState = 'pending' | 'pass' | 'fail' | 'skipped';
 
@@ -168,6 +189,13 @@ export interface Invoice {
   lines: MatchLine[];
 
   /**
+   * Documents attached to the invoice that are not matching inputs: tax
+   * documents including Faktur Pajak, delivery notes, approval mail. Stored and
+   * carried to posting, never validated (Workflow PRD §3, §14).
+   */
+  attachments: { name: string; kind: 'Tax document' | 'Supporting document' }[];
+
+  /**
    * The frozen result of the last matching run. Nothing is re-evaluated
    * retroactively (§15.5) — a config change reaches this only on a re-run.
    */
@@ -223,6 +251,8 @@ export interface Connections {
   mailboxProvider: 'gmail' | 'outlook' | null;
   mailboxAddress: string;
   mailboxFolder: string;
+  /** Ticketing, where invoices arrive as tickets rather than mail. */
+  ticketing: 'freshdesk' | 'zendesk' | null;
 }
 
 /* ── People ───────────────────────────────────────────────────────────── */
@@ -250,12 +280,39 @@ export interface MemoryPattern {
   fieldKey: string;
   patternKey: string;
   suggestedValue: string;
-  /** Consecutive identical acknowledgements. At config.memoryThreshold it suggests. */
+  /** Consecutive identical acknowledgments. At config.memoryThreshold it suggests. */
   streak: number;
   lastSeen: string;
 }
 
 /* ── Ask Neo ──────────────────────────────────────────────────────────── */
+
+/**
+ * A document the user has indexed. Page counts are large on purpose: taking a
+ * 200-page contract is the capability being exposed here, where general
+ * assistants cap out around thirty.
+ */
+export interface IndexedDocument {
+  id: string;
+  name: string;
+  pages: number;
+  kind: 'Contract' | 'Policy' | 'Handbook' | 'Report';
+  indexedAt: string;
+  /** Where it came from, for the grounding summary. */
+  origin: 'Upload' | 'Mailbox' | 'Workflow';
+  /** Passages an answer can quote back with a page reference. */
+  passages: { topics: string[]; page: number; text: string }[];
+}
+
+/** What Ask Neo is allowed to reach on a given surface. */
+export type NeoScope = 'workspace' | 'workflow';
+
+/** A source Ask Neo can ground an answer in, for the summary on the page. */
+export interface GroundingSource {
+  label: string;
+  detail: string;
+  connected: boolean;
+}
 
 export interface Citation {
   label: string;
@@ -269,4 +326,6 @@ export interface ChatTurn {
   citations?: Citation[];
   /** True when Neo declined for want of a grounded source (Journey §2). */
   ungrounded?: boolean;
+  /** True when the surface cannot reach far enough, and the page can. */
+  outOfScope?: boolean;
 }

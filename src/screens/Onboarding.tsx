@@ -23,7 +23,14 @@ import {
   GoogleLogoIcon,
   UsersThreeIcon,
 } from '@neofloai/atoms/icons';
-import { COUNTRIES, DISCOVERABLE_WORKSPACES, JOB_FUNCTIONS, SIGNED_IN } from '../data';
+import {
+  COUNTRIES,
+  JOB_FUNCTIONS,
+  PENDING_INVITE,
+  SIGNED_IN,
+  VISIBILITY_COPY,
+  readDomain,
+} from '../data';
 import { useStore } from '../store';
 import { ColorModeToggle } from '../components/common';
 
@@ -65,16 +72,25 @@ function OnboardingFrame({
 /* ── Sign up ──────────────────────────────────────────────────────────── */
 
 export function SignupScreen() {
-  const { signUp } = useStore();
-  const [firstName, setFirstName] = React.useState(SIGNED_IN.firstName);
-  const [lastName, setLastName] = React.useState(SIGNED_IN.lastName);
-  const [email, setEmail] = React.useState(SIGNED_IN.email);
-  const [password, setPassword] = React.useState('correct-horse-battery');
+  const { signUp, profile } = useStore();
+  // Empty in normal use, as a real signup form is. Seeded from the profile only
+  // when a demo scenario has staged an address to show what happens to it.
+  const [firstName, setFirstName] = React.useState(profile.firstName);
+  const [lastName, setLastName] = React.useState(profile.lastName);
+  const [email, setEmail] = React.useState(profile.email);
+  const [password, setPassword] = React.useState('');
   const [showPassword, setShowPassword] = React.useState(false);
   const [touched, setTouched] = React.useState(false);
 
   const emailValid = /.+@.+\..+/.test(email);
-  const canSubmit = firstName.trim() !== '' && lastName.trim() !== '' && emailValid && password.length >= 8;
+  const { verdict, domain } = readDomain(email);
+  const personalBlocked = emailValid && verdict === 'personal-provider';
+  const canSubmit =
+    firstName.trim() !== '' &&
+    lastName.trim() !== '' &&
+    emailValid &&
+    password.length >= 8 &&
+    !personalBlocked;
 
   return (
     <OnboardingFrame>
@@ -95,7 +111,15 @@ export function SignupScreen() {
           size="lg"
           fullWidth
           startIcon={<GoogleLogoIcon size={18} />}
-          onClick={() => signUp('google', firstName || 'Shubham', lastName || 'Shrivastava', email)}
+          disabled={personalBlocked}
+          onClick={() =>
+            signUp(
+              'google',
+              firstName || SIGNED_IN.firstName,
+              lastName || SIGNED_IN.lastName,
+              email || SIGNED_IN.email,
+            )
+          }
         >
           Continue with Google
         </Button>
@@ -130,13 +154,39 @@ export function SignupScreen() {
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             status={touched && !emailValid ? 'error' : undefined}
-            helperText={
-              touched && !emailValid
-                ? 'Enter a valid email address'
-                : 'A free provider such as gmail forms its own organisation rather than joining one.'
-            }
+            helperText={touched && !emailValid ? 'Enter a valid email address' : undefined}
             fullWidth
           />
+
+          {/* The address decides the whole path, so the form says which one it
+              is before you commit to it. */}
+          {/* Which path you are on is settled by your domain once you sign in.
+              Saying so here, before you commit, is cheaper than a dead end. */}
+          {emailValid && (
+            <Alert
+              severity={
+                verdict === 'personal-provider'
+                  ? 'error'
+                  : verdict === 'existing-tenant'
+                    ? 'info'
+                    : 'success'
+              }
+              floating
+              title={
+                verdict === 'personal-provider'
+                  ? 'Use your work email address'
+                  : verdict === 'existing-tenant'
+                    ? `${domain} is already on Neoflo`
+                    : `You will be the first from ${domain}`
+              }
+            >
+              {verdict === 'personal-provider'
+                ? `We need a company domain, so ${domain} will not work. Use the address your colleagues would recognize.`
+                : verdict === 'existing-tenant'
+                  ? 'You will pick a workspace next, or create your own.'
+                  : 'Signing in creates your organization and your first workspace, and you own both.'}
+            </Alert>
+          )}
 
           <TextField
             label="Password"
@@ -163,6 +213,7 @@ export function SignupScreen() {
         <Button
           size="lg"
           fullWidth
+          disabled={personalBlocked}
           onClick={() => {
             setTouched(true);
             if (canSubmit) signUp('password', firstName, lastName, email);
@@ -171,9 +222,11 @@ export function SignupScreen() {
           Create account
         </Button>
 
+        {/* An invited user never reaches this screen by choosing an invitation:
+            they arrive on a tokenised link from an email, which this prototype
+            has no routes for. The scenario switcher covers that path instead. */}
         <Typography variant="caption" color="text.secondary" align="center">
-          No workspace name is ever requested during signup. One is created for you and can be
-          renamed at any time.
+          You can rename your workspace at any time.
         </Typography>
       </Stack>
     </OnboardingFrame>
@@ -187,75 +240,92 @@ export function SignupScreen() {
  * reveals which workspaces exist — joining is per workspace (Signup PRD §3).
  */
 export function RoutingScreen() {
-  const { profile, joinWorkspace, createOwnWorkspace } = useStore();
+  const { profile, joinWorkspace, createOwnWorkspace, discoverableWorkspaces } = useStore();
   const domain = profile.email.split('@')[1] ?? 'your company';
+
+  /**
+   * Private workspaces never reach this list, and their existence is not hinted
+   * at either. A count would leak that a hidden workspace exists to somebody
+   * with no access to it, and there is nothing they could do with the fact.
+   */
+  const listed = discoverableWorkspaces.filter((w) => w.visibility !== 'private');
 
   return (
     <OnboardingFrame width={620}>
       <Stack sx={{ gap: 3 }}>
         <Stack sx={{ gap: 0.5 }}>
           <Typography variant="h4" component="h1">
-            Your organisation is already on Neoflo
+            Your organization is already on Neoflo
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Someone at <strong>{domain}</strong> signed up before you. These are the workspaces open
-            to people from your domain. Joining is per workspace — a domain match on its own grants
-            no access.
+            These are the workspaces at <strong>{domain}</strong> open to you. Joining is per
+            workspace.
           </Typography>
         </Stack>
 
+        {listed.length === 0 ? (
+          <Alert severity="info" title="Nothing here is open to join">
+            Every workspace at your organization is invitation only. Create your own below, and a
+            colleague can invite you to theirs later.
+          </Alert>
+        ) : (
         <Card component="section">
           <Stack component="ul" sx={{ listStyle: 'none', p: 0, m: 0 }} divider={<Divider component="li" />}>
-            {DISCOVERABLE_WORKSPACES.map((workspace) => (
-              <Stack
-                key={workspace.id}
-                component="li"
-                direction="row"
-                sx={{ gap: 2, alignItems: 'center', p: 2 }}
-              >
-                <Avatar size="md" color="secondary" shape="mid">
-                  <UsersThreeIcon size={16} />
-                </Avatar>
-
-                <Stack sx={{ flex: 1, minWidth: 0, gap: 0.25 }}>
-                  <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <Typography variant="body1" weight="medium">
-                      {workspace.name}
-                    </Typography>
-                    <Chip
-                      size="sm"
-                      variant={workspace.autoApprove ? 'success' : 'warning'}
-                      label={workspace.autoApprove ? 'Joins instantly' : 'Needs approval'}
-                    />
-                  </Stack>
-                  <Typography variant="body2" color="text.secondary">
-                    {workspace.owner} · {workspace.members} members
-                  </Typography>
-                  {!workspace.autoApprove && (
-                    <Typography variant="caption" color="text.secondary">
-                      You get your own workspace immediately and the request goes to the owner.
-                    </Typography>
-                  )}
-                </Stack>
-
-                <Button
-                  variant="secondary"
-                  appearance="outline"
-                  size="sm"
-                  onClick={() => joinWorkspace(workspace.name, workspace.autoApprove)}
+            {listed.map((workspace) => {
+              const copy = VISIBILITY_COPY[workspace.visibility];
+              return (
+                <Stack
+                  key={workspace.id}
+                  component="li"
+                  direction="row"
+                  sx={{ gap: 2, alignItems: 'center', p: 2 }}
                 >
-                  Join
-                </Button>
-              </Stack>
-            ))}
+                  <Avatar size="md" color="secondary" shape="mid">
+                    <UsersThreeIcon size={16} />
+                  </Avatar>
+
+                  <Stack sx={{ flex: 1, minWidth: 0, gap: 0.25 }}>
+                    <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <Typography variant="body1" weight="medium">
+                        {workspace.name}
+                      </Typography>
+                      <Chip
+                        size="sm"
+                        variant={workspace.visibility === 'public' ? 'success' : 'warning'}
+                        label={copy.short}
+                      />
+                    </Stack>
+                    <Typography variant="body2" color="text.secondary">
+                      {workspace.owner} · {workspace.members} members
+                    </Typography>
+                    {workspace.visibility === 'approval' && (
+                      <Typography variant="caption" color="text.secondary">
+                        You get your own workspace immediately and the request goes to the owner.
+                      </Typography>
+                    )}
+                  </Stack>
+
+                  <Button
+                    variant="secondary"
+                    appearance="outline"
+                    size="sm"
+                    onClick={() => joinWorkspace(workspace.name, workspace.visibility)}
+                  >
+                    {workspace.visibility === 'public' ? 'Join' : 'Request'}
+                  </Button>
+                </Stack>
+              );
+            })}
           </Stack>
         </Card>
+        )}
 
-        <Alert severity="info" title="A pending request never blocks you">
-          Where a workspace needs approval, one is provisioned for you immediately and the request
-          goes to its owner. You start working straight away; if it is approved later, both
-          workspaces are kept and a switcher appears.
-        </Alert>
+        {listed.length > 0 && (
+          <Alert severity="info" title="A pending request never blocks you">
+          Where a workspace needs approval you get your own to work in immediately, and the request
+          goes to its owner. You are never left waiting.
+          </Alert>
+        )}
 
         <Divider>or</Divider>
 
@@ -271,8 +341,7 @@ export function RoutingScreen() {
         </Button>
 
         <Typography variant="caption" color="text.secondary" align="center">
-          Creating your own is never blocked, needs no approval, and puts you in the same
-          organisation.
+          No approval needed, and you stay in the same organization.
         </Typography>
       </Stack>
     </OnboardingFrame>
@@ -292,12 +361,15 @@ export function ProfileScreen() {
   const [touched, setTouched] = React.useState(false);
 
   const pathCopy: Record<string, string> = {
-    'first-of-domain': 'Your organisation and a workspace were created as you signed in. You own both.',
+    'first-of-domain':
+      profile.domainVerdict === 'personal-provider'
+        ? `You signed up with a personal address, so ${profile.workspaceName} is your own organization. You own it, and you can rename it at any time.`
+        : `Nobody from ${profile.domain} had signed up before, so your organization and ${profile.workspaceName} were created as you signed in. You own both, and you can rename the workspace at any time.`,
     joined: profile.pendingRequestFor
       ? `${profile.workspaceName} has been set up for you to work in, and your request to join ${profile.pendingRequestFor} has gone to its owner. You are not waiting on it.`
       : `You have joined ${profile.workspaceName}.`,
     'created-own': `${profile.workspaceName} is ready, and you own it.`,
-    invited: `You have been added to ${profile.workspaceName}.`,
+    invited: `${PENDING_INVITE.invitedBy} invited you to ${profile.workspaceName}, and you are in as ${PENDING_INVITE.invoiceProcessingRole} on Invoice Processing. You were never asked which workspace.`,
   };
 
   return (
@@ -308,8 +380,7 @@ export function ProfileScreen() {
             Two questions, {profile.firstName}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            {pathCopy[profile.routePath ?? 'first-of-domain']} Nothing else is asked, and both of
-            these can be changed later.
+            {pathCopy[profile.routePath ?? 'first-of-domain']} Both of these can be changed later.
           </Typography>
         </Stack>
 
@@ -335,7 +406,7 @@ export function ProfileScreen() {
                 value={country}
                 onChange={(event) => setCountry(String(event.target.value))}
                 status={touched && !country ? 'error' : undefined}
-                helperText="Required. This sets tax-code defaults for your whole organisation, not just for you."
+                helperText="Required. This sets tax-code defaults for your whole organization, not just for you."
                 fullWidth
               >
                 {COUNTRIES.map((option) => (
@@ -347,11 +418,6 @@ export function ProfileScreen() {
             </Stack>
           </CardContent>
         </Card>
-
-        <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Chip size="sm" variant="information" label="Invoice Processing is already present" />
-          <Chip size="sm" variant="secondary" label="Nothing to select or enable" />
-        </Stack>
 
         <Button
           size="lg"

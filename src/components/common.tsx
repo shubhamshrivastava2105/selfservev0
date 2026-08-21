@@ -26,7 +26,7 @@ import {
 import type { ChipVariant } from '@neofloai/atoms';
 import type { ExtractedField, InvoiceStatus, SourceKind } from '../types';
 
-/* ── Colour scheme ────────────────────────────────────────────────────── */
+/* ── Color scheme ────────────────────────────────────────────────────── */
 
 export function ColorModeToggle() {
   const { mode, setMode } = useColorScheme();
@@ -34,7 +34,7 @@ export function ColorModeToggle() {
   // Undefined on the first render, before the provider has read the stored
   // preference. Render the space, not a guess, or the icon flips after mount.
   if (!mode) {
-    return <IconButton aria-label="Colour scheme" disabled sx={{ visibility: 'hidden' }} />;
+    return <IconButton aria-label="Color scheme" disabled sx={{ visibility: 'hidden' }} />;
   }
 
   return (
@@ -89,7 +89,7 @@ export function confidenceTone(confidence: number | null, threshold: number): Co
 }
 
 /**
- * The confidence score is shown on the field itself, not only as a colour
+ * The confidence score is shown on the field itself, not only as a color
  * (Workflow PRD §4).
  */
 export function ConfidenceBadge({
