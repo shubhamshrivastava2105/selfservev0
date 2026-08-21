@@ -108,7 +108,7 @@ function Tile({
  * briefing does not appear.
  */
 function BriefingMessage({ firstVisit }: { firstVisit: boolean }) {
-  const { invoices, memory, config, goTo, openInvoice } = useStore();
+  const { invoices, memory, config, profile, goTo, openInvoice } = useStore();
   const needsMe = invoices.filter((i) => i.status === 'Action Required');
   const stp = invoices.filter((i) => i.stpPosted);
   const learned = memory.filter((m) => m.streak >= config.memoryThreshold);
@@ -143,16 +143,27 @@ function BriefingMessage({ firstVisit }: { firstVisit: boolean }) {
 
   return (
     <NeoMessage>
+      {/* On a first visit this is somebody else's work in progress. Calling it
+          "your workspace" and "where it stands" claims a history this person
+          does not have — they joined a team that was already going. */}
       <Typography variant="body2">
         {firstVisit
-          ? 'Your workspace is already running. Here is where it stands.'
+          ? `You have joined ${profile.workspaceName || 'a workspace'}, and it is already processing invoices. Here is what is open.`
           : 'Here is what changed while you were away.'}
       </Typography>
       <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
         {needsMe.length > 0 && (
           <Tile
             value={needsMe.length}
-            label={needsMe.length === 1 ? 'invoice needs you' : 'invoices need you'}
+            label={
+              firstVisit
+                ? needsMe.length === 1
+                  ? 'invoice needs a person'
+                  : 'invoices need a person'
+                : needsMe.length === 1
+                  ? 'invoice needs you'
+                  : 'invoices need you'
+            }
             detail={needsMe.slice(0, 3).map((i) => i.number).join(', ') || undefined}
             action={
               <Button size="sm" endIcon={<ArrowRightIcon size={14} />} onClick={() => goTo('queue')}>
@@ -164,7 +175,7 @@ function BriefingMessage({ firstVisit }: { firstVisit: boolean }) {
         {stp.length > 0 && (
           <Tile
             value={stp.length}
-            label="posted without needing you"
+            label={firstVisit ? 'posted with nobody involved' : 'posted without needing you'}
             detail={stp.map((i) => i.number).join(', ') || undefined}
             action={
               <Button
