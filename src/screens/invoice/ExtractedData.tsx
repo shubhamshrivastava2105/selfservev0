@@ -1,7 +1,6 @@
 import * as React from 'react';
 import {
   Box,
-  Button,
   Chip,
   Stack,
   Tab,
@@ -50,12 +49,13 @@ function ValueCell({
   field: ExtractedField;
   scope: 'invoice' | 'po' | 'grn';
 }) {
-  const { config, memory, editField, acknowledgeField } = useStore();
+  const { config, memory, editField } = useStore();
   const [draft, setDraft] = React.useState(field.value);
   React.useEffect(() => setDraft(field.value), [field.value]);
 
   const tone = confidenceTone(field.confidence, config.confidenceThreshold);
-  const needsUser = (tone === 'amber' || tone === 'red') && !field.acknowledged;
+  // Flagged, not blocking: a low read is editable and marked, nothing more.
+  const needsUser = tone === 'amber' || tone === 'red';
 
   const suggestion = React.useMemo(() => {
     if (!needsUser || !field.learnable) return null;
@@ -100,7 +100,9 @@ function ValueCell({
           sx={{ maxWidth: 320 }}
           fullWidth
         />
-        <Tooltip title={`Read at ${field.confidence}% confidence, below the ${config.confidenceThreshold}% threshold`}>
+        <Tooltip
+          title={`Read at ${field.confidence}% confidence, below the ${config.confidenceThreshold}% threshold. Correct it if it is wrong.`}
+        >
           <Chip
             size="sm"
             variant={tone === 'red' ? 'error' : 'warning'}
@@ -108,15 +110,6 @@ function ValueCell({
             label={`${field.confidence}%`}
           />
         </Tooltip>
-        <Button
-          variant="secondary"
-          appearance="outline"
-          size="sm"
-          onClick={() => acknowledgeField(invoice.id, scope, field.key)}
-          sx={{ whiteSpace: 'nowrap' }}
-        >
-          Confirm
-        </Button>
       </Stack>
 
       {suggestion && (

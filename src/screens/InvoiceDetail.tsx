@@ -68,8 +68,11 @@ export function InvoiceDetailScreen() {
     markExported,
     setPoNumber,
     attachReference,
+    attachHeldDocument,
+    heldDocumentsFor,
     simulatePosting,
     openAskNeo,
+    toggleAppRail,
   } = useStore();
 
   const invoice = invoices.find((i) => i.id === openInvoiceId);
@@ -158,7 +161,7 @@ export function InvoiceDetailScreen() {
           { icon: <CalendarBlankIcon size={14} />, label: formatDate(invoice.invoiceDate) },
           { icon: <CurrencyDollarIcon size={14} />, label: money(invoice.amount, invoice.currency) },
         ]}
-        onToggleRail={() => goTo('queue')}
+        onToggleRail={toggleAppRail}
         onAskNeo={() => openAskNeo(invoice.id)}
         onReject={readOnly ? undefined : () => setRejectOpen(true)}
         primary={primary}
@@ -222,7 +225,38 @@ export function InvoiceDetailScreen() {
                   ) : undefined
                 }
               >
-                {HARD_BLOCK_COPY[block].next}
+                <Stack sx={{ gap: 1.5 }}>
+                  <Typography variant="body2">{HARD_BLOCK_COPY[block].next}</Typography>
+
+                  {/* Documents that arrived without an invoice create no queue
+                      row, so this is the moment they are worth showing. */}
+                  {!readOnly && block !== 'duplicate' && (() => {
+                    const which = block === 'no-po' ? 'po' : 'grn';
+                    const held = heldDocumentsFor(which);
+                    if (held.length === 0) return null;
+                    return (
+                      <Stack sx={{ gap: 0.75 }}>
+                        <Typography variant="caption" color="text.secondary">
+                          {held.length === 1
+                            ? 'One document already received could be this one'
+                            : `${held.length} documents already received could be this one`}
+                        </Typography>
+                        <Stack direction="row" sx={{ gap: 0.75, flexWrap: 'wrap' }}>
+                          {held.map((name) => (
+                            <Chip
+                              key={name}
+                              size="sm"
+                              variant="information"
+                              icon={<FilePdfIcon size={12} />}
+                              label={name}
+                              onClick={() => attachHeldDocument(invoice.id, which, name)}
+                            />
+                          ))}
+                        </Stack>
+                      </Stack>
+                    );
+                  })()}
+                </Stack>
               </Alert>
             </Box>
           )}

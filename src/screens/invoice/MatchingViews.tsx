@@ -230,8 +230,7 @@ export function LineItemComparison({ invoice }: { invoice: Invoice }) {
                   <TableRow>
                     <TableCell padding="checkbox" />
                     <TableCell padding="checkbox" />
-                    <TableCell>PO No.</TableCell>
-                    <TableCell>GRN No.</TableCell>
+                    <TableCell sx={{ minWidth: 150 }}>PO / GRN</TableCell>
                     <TableCell sx={{ width: '100%' }}>Description</TableCell>
                     <TableCell align="right">Qty</TableCell>
                     <TableCell align="right">Unit Price</TableCell>
@@ -247,10 +246,16 @@ export function LineItemComparison({ invoice }: { invoice: Invoice }) {
                       <TableCell padding="checkbox">
                         <Checkbox size="sm" checked={Boolean(g.matchedTo)} readOnly aria-label={g.grnNo} />
                       </TableCell>
+                      {/* One reference, two numbers: the order it came from and
+                          the receipt that recorded it. */}
                       <TableCell>
-                        <Chip size="sm" variant="secondary" label={g.poNo} />
+                        <Stack sx={{ gap: 0.25, minWidth: 0 }}>
+                          <Chip size="sm" variant="secondary" label={g.poNo} />
+                          <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'mono' }}>
+                            {g.grnNo}
+                          </Typography>
+                        </Stack>
                       </TableCell>
-                      <TableCell sx={{ fontFamily: 'mono' }}>{g.grnNo}</TableCell>
                       <TableCell>{g.description}</TableCell>
                       <TableCell align="right">{num(g.qty)}</TableCell>
                       <TableCell align="right">{num(g.unitPrice)}</TableCell>
@@ -258,7 +263,7 @@ export function LineItemComparison({ invoice }: { invoice: Invoice }) {
                     </TableRow>
                   ))}
                   <TableRow>
-                    <TableCell padding="checkbox" colSpan={4} />
+                    <TableCell padding="checkbox" colSpan={3} />
                     <TableCell>
                       <Typography variant="body2" weight="medium">
                         GRN Total

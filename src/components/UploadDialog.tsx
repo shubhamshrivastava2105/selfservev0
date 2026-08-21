@@ -16,6 +16,7 @@ import {
 } from '@neofloai/atoms';
 import { FilePdfIcon, TrashIcon, UploadSimpleIcon } from '@neofloai/atoms/icons';
 import { useStore } from '../store';
+import { classifyFilename } from '../classify';
 import type { DocumentKind } from '../types';
 
 /**
@@ -32,18 +33,6 @@ const KINDS: { value: DocumentKind; label: string }[] = [
   { value: 'supporting', label: 'Supporting document' },
 ];
 
-/** What a filename suggests it is. The user can override every guess. */
-export function classifyFilename(name: string): DocumentKind {
-  // Underscores are word characters, so `\binvoice\b` would not match
-  // "Invoice_88213". Normalise separators before testing.
-  const n = name.toLowerCase().replace(/[_.]+/g, '-');
-  if (/\b(po|purchase[-_ ]?order)\b|^po[-_]/.test(n)) return 'po';
-  if (/\b(grn|goods[-_ ]?receipt|receipt[-_ ]?note|delivery)\b/.test(n)) return 'grn';
-  if (/faktur|tax|vat|gst|wht/.test(n)) return 'tax';
-  if (/\b(inv|invoice|bill)\b|^inv[-_]/.test(n)) return 'invoice';
-  return 'supporting';
-}
-
 export interface PickedFile {
   id: string;
   name: string;
@@ -57,11 +46,29 @@ function sizeLabel(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function UploadDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function UploadDialog({
+  open,
+  onClose,
+  initialFiles,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Files the picker already returned, so the dialog opens showing them. */
+  initialFiles?: FileList | null;
+}) {
   const { ingestUpload } = useStore();
   const [files, setFiles] = React.useState<PickedFile[]>([]);
   const [dragging, setDragging] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // Seeded from the click that opened this, so the OS picker is the first thing
+  // the user sees rather than a second button to press.
+  React.useEffect(() => {
+    if (open && initialFiles && initialFiles.length > 0) {
+      add(initialFiles);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialFiles]);
 
   const add = (list: FileList | null) => {
     if (!list) return;

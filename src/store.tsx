@@ -26,6 +26,7 @@ import {
   readDomain,
 } from './data';
 import { deriveStatus, runMatching, stamp } from './engine';
+import { classifyFilename } from './classify';
 import { at, formatDate, now } from './clock';
 import type { ScenarioId } from './scenarios';
 import type {
@@ -87,6 +88,13 @@ export interface SessionProgress {
 interface Store {
   screen: Screen;
   goTo: (screen: Screen) => void;
+  /**
+   * Whether the app rail is showing. A record screen has its own icon rail, so
+   * two vertical navs would compete: the app rail folds away and the hamburger
+   * in the record header brings it back.
+   */
+  appRailOpen: boolean;
+  toggleAppRail: () => void;
 
   profile: Profile;
   signUp: (method: SignupMethod, firstName: string, lastName: string, email: string) => void;
@@ -168,6 +176,13 @@ interface Store {
   markExported: (ids: string[]) => void;
   setPoNumber: (id: string, poNumber: string) => void;
   attachReference: (id: string, which: 'po' | 'grn') => void;
+  /**
+   * Attach a document that arrived without an invoice. It is consumed off the
+   * source it was held on, so it cannot be attached twice.
+   */
+  attachHeldDocument: (id: string, which: 'po' | 'grn', name: string) => void;
+  /** Documents held on sources that could serve as a PO or a receipt. */
+  heldDocumentsFor: (which: 'po' | 'grn') => string[];
   setLineCode: (id: string, lineId: string, field: 'vat' | 'wht' | 'gl', value: string) => void;
   /** Edit a field on the ERP payload. */
   setErpField: (id: string, key: keyof ErpPayload, value: string) => void;
@@ -198,6 +213,7 @@ export function useStore(): Store {
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [screen, setScreen] = React.useState<Screen>('signup');
+  const [appRailOpen, setAppRailOpen] = React.useState(false);
   const [profile, setProfile] = React.useState<Profile>({
     firstName: '',
     lastName: '',
@@ -704,6 +720,44 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       rerunMatching(id);
     },
     [patch, rerunMatching, actor],
+  );
+
+  /**
+   * Documents that arrived with no invoice among them. They create no queue row,
+   * which is why they surface at the moment an invoice needs one rather than as
+   * a notice on the dashboard.
+   */
+  const heldDocumentsFor = React.useCallback<Store['heldDocumentsFor']>(
+    (which) => {
+      const wanted = which === 'po' ? 'po' : 'grn';
+      return sources
+        .flatMap((source) => source.heldDocuments)
+        .filter((name) => classifyFilename(name) === wanted);
+    },
+    [sources],
+  );
+
+  const attachHeldDocument = React.useCallback<Store['attachHeldDocument']>(
+    (id, which, name) => {
+      // Consumed off whichever source was holding it.
+      setSources((previous) =>
+        previous.map((source) =>
+          source.heldDocuments.includes(name)
+            ? { ...source, heldDocuments: source.heldDocuments.filter((d) => d !== name) }
+            : source,
+        ),
+      );
+      patch(id, (invoice) => ({
+        ...invoice,
+        audit: appendAudit(
+          invoice,
+          which === 'po' ? 'PO attached' : 'GRN attached',
+          `${name}, which arrived earlier without an invoice`,
+        ),
+      }));
+      attachReference(id, which);
+    },
+    [patch, actor],
   );
 
   /**
@@ -1295,7 +1349,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const value: Store = {
     screen,
-    goTo,
+    goTo: (next: Screen) => {
+      // Leaving a record hands the rail back.
+      if (next !== 'invoice') setAppRailOpen(false);
+      goTo(next);
+    },
+    appRailOpen,
+    toggleAppRail: () => setAppRailOpen((previous) => !previous),
     profile,
     signUp,
     acceptInvite,
@@ -1374,6 +1434,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     markExported,
     setPoNumber,
     attachReference,
+    attachHeldDocument,
+    heldDocumentsFor,
     setLineCode,
     setErpField,
     simulatePosting,

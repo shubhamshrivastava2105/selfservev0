@@ -1,6 +1,5 @@
 import * as React from 'react';
 import {
-  Alert,
   Box,
   Button,
   Chip,
@@ -19,6 +18,7 @@ import {
 } from '@neofloai/atoms';
 import {
   ArrowSquareOutIcon,
+  CaretDownIcon,
   DownloadSimpleIcon,
   EnvelopeSimpleIcon,
   FadersHorizontalIcon,
@@ -45,7 +45,6 @@ const OPEN_STATUSES: InvoiceStatus[] = ['Action Required', 'Extraction', 'Matchi
 export function QueueScreen() {
   const {
     invoices,
-    sources,
     config,
     connections,
     openInvoice,
@@ -59,6 +58,8 @@ export function QueueScreen() {
   const [filterAnchor, setFilterAnchor] = React.useState<HTMLElement | null>(null);
   const [addAnchor, setAddAnchor] = React.useState<HTMLElement | null>(null);
   const [uploadOpen, setUploadOpen] = React.useState(false);
+  const [picked, setPicked] = React.useState<FileList | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const vendors = React.useMemo(
     () => [...new Set(invoices.map((i) => i.vendor))].sort(),
@@ -276,15 +277,6 @@ export function QueueScreen() {
     [config.confidenceThreshold, openInvoice],
   );
 
-  /**
-   * A bundle that arrived with no invoice among it is the one thing an invoice
-   * row cannot lead you to, so it is surfaced here and only when it exists.
-   */
-  const heldDocuments = React.useMemo(
-    () => sources.flatMap((source) => source.heldDocuments),
-    [sources],
-  );
-
   const openCount = invoices.filter((i) => !CLOSED_STATUSES.includes(i.status)).length;
   const closedCount = invoices.length - openCount;
   const needsMe = invoices.filter((i) => i.status === 'Action Required').length;
@@ -308,13 +300,39 @@ export function QueueScreen() {
         >
           Download CSV
         </Button>
+        {/* A real picker, opened by the click itself so the browser allows it. */}
+        <Box
+          component="input"
+          type="file"
+          multiple
+          accept=".pdf,.png,.jpg,.jpeg,.zip"
+          ref={fileInputRef}
+          onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+            if (event.target.files && event.target.files.length > 0) {
+              setPicked(event.target.files);
+              setUploadOpen(true);
+            }
+          }}
+          sx={{ display: 'none' }}
+        />
         <Button
           size="sm"
           startIcon={<UploadSimpleIcon size={16} />}
-          onClick={(event) => setAddAnchor(event.currentTarget)}
+          onClick={() => fileInputRef.current?.click()}
         >
           Upload Invoice
         </Button>
+        <Tooltip title="Other ways in">
+          <IconButton
+            variant="secondary"
+            appearance="outline"
+            size="sm"
+            aria-label="Other ways to add invoices"
+            onClick={(event) => setAddAnchor(event.currentTarget)}
+          >
+            <CaretDownIcon />
+          </IconButton>
+        </Tooltip>
       </ShellBar>
 
       <Stack sx={{ flex: 1, minHeight: 0 }}>
@@ -340,18 +358,6 @@ export function QueueScreen() {
             <Tab label="Closed" value="closed" count={closedCount} />
           </Tabs>
         </Box>
-
-        {heldDocuments.length > 0 && (
-          <Box sx={{ px: 3, pt: 1 }}>
-            <Alert
-              severity="warning"
-              title={`${heldDocuments.length} document${heldDocuments.length === 1 ? '' : 's'} arrived without an invoice`}
-            >
-              {heldDocuments.join(', ')}. Nothing is waiting in the queue. A purchase order among them
-              can be attached to a later invoice.
-            </Alert>
-          </Box>
-        )}
 
         <Stack
           direction="row"
@@ -472,7 +478,16 @@ export function QueueScreen() {
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       />
 
-      <UploadDialog open={uploadOpen} onClose={() => setUploadOpen(false)} />
+      <UploadDialog
+        open={uploadOpen}
+        initialFiles={picked}
+        onClose={() => {
+          setUploadOpen(false);
+          setPicked(null);
+          // Let the same file be chosen again next time.
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        }}
+      />
 
       <Menu
         anchorEl={addAnchor}

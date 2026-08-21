@@ -59,9 +59,19 @@ export function unacknowledgedFields(invoice: Invoice, threshold: number): Extra
   );
 }
 
-/** Matching does not run until every low-confidence field is dealt with (§4). */
+/**
+ * Extraction is clear once every mandatory field has a value.
+ *
+ * A low-confidence read is flagged, not blocking: the score is shown on the
+ * field and the user corrects it if it is wrong. Requiring an explicit
+ * acknowledgement of every flag made people click through them, which taught
+ * nothing and slowed the good case down.
+ */
 export function extractionIsClear(invoice: Invoice, config: WorkflowConfig): boolean {
-  return unacknowledgedFields(invoice, config.confidenceThreshold).length === 0;
+  void config;
+  return [...invoice.invoiceFields, ...invoice.poFields, ...invoice.grnFields]
+    .filter((f) => f.mandatory)
+    .every((f) => f.value.trim() !== '' && f.value.trim() !== '—');
 }
 
 /* ── Vendor normalization ─────────────────────────────────────────────── */

@@ -372,8 +372,11 @@ function AskNeoButton({ invoiceId, label }: { invoiceId?: string | null; label: 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const railHasRoom = useRailHasRoom();
   const [collapsed, setCollapsed] = React.useState(() => !railHasRoom);
-  const { askNeoOpen } = useStore();
+  const { askNeoOpen, screen, appRailOpen } = useStore();
   const sideBySide = useSideBySide();
+  // A record screen has its own icon rail, so the app rail stays folded there
+  // until the hamburger asks for it.
+  const showAppRail = screen !== 'invoice' || appRailOpen;
 
   /**
    * Fold the rail when the window gets narrow and unfold it when there is room
@@ -402,7 +405,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <ShellContext.Provider value={value}>
       <Stack direction="row" sx={{ height: '100vh' }}>
-        <NavRail />
+        {showAppRail && <NavRail />}
         <Stack sx={{ flex: 1, minWidth: 0 }}>{children}</Stack>
         <AskNeoPanel />
       </Stack>
