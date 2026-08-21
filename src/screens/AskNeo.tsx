@@ -16,7 +16,6 @@ import {
 } from '@neofloai/atoms';
 import {
   ArrowRightIcon,
-  CheckCircleIcon,
   CaretDownIcon,
   CheckIcon,
   DatabaseIcon,
@@ -194,71 +193,61 @@ function BriefingMessage({ firstVisit }: { firstVisit: boolean }) {
 /**
  * The path to a first posted invoice, on a first visit only.
  *
- * Three steps, and every one of them is the product doing its job — nothing
- * about setup, because matching, tolerances and the ERP connection arrive
- * filled in.
+ * Three things, and every one is the product doing its job — nothing about
+ * setup, because matching, tolerances and the ERP connection arrive filled in.
  *
- * It shows whether or not the steps are done, because on a first visit this is
- * an explanation before it is a tracker: someone joining a workspace that
- * already posts invoices learns the shape of the thing, and a struck-through
- * line reads as "this already happens here" rather than as a chore they missed.
- *
- * Progress is read off the invoices rather than tracked. A counter kept
- * alongside the records can disagree with them; a derived one cannot.
+ * No progress on it, and that is the point. This shows on a first landing and
+ * only then, so by definition none of it has happened yet: a counter would read
+ * 0 of 3 every time it was ever seen, and struck-through lines would be
+ * claiming credit for work the workspace did before this person arrived. It is
+ * an explanation of the shape, which is what somebody who just got here needs.
  */
 function FirstStepsMessage() {
   const { invoices, goTo } = useStore();
-
-  const arrived = invoices.length > 0;
-  const looked = invoices.some(
-    (i) =>
-      i.stage !== 'extraction' ||
-      i.overrides.length > 0 ||
-      i.invoiceFields.some((f) => f.editedFrom !== undefined),
-  );
-  const closed = invoices.some((i) => ['Posted', 'Exported'].includes(i.status));
-
   const steps = [
-    { label: 'An invoice arrives, and gets read', done: arrived },
-    { label: 'You check the reading and the match', done: looked },
-    { label: 'It posts to your books', done: closed },
+    'An invoice arrives, and gets read',
+    'You check the reading and the match',
+    'It posts to your books',
   ];
-  const doneCount = steps.filter((s) => s.done).length;
-  const next = steps.find((s) => !s.done);
 
   return (
     <NeoMessage>
       <Typography variant="body2">
-        {doneCount === 0
-          ? 'Three things happen on the way to a posted invoice. That is the whole path.'
-          : doneCount === steps.length
-            ? 'This is the whole path to a posted invoice, and all of it is already running here.'
-            : `This is the whole path to a posted invoice. ${doneCount} of ${steps.length} has happened already.`}
+        Three things happen on the way to your first posted invoice. That is the whole path.
       </Typography>
       <Stack
         sx={{ borderRadius: 1, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}
         divider={<Divider />}
       >
-        {steps.map((step) => (
+        {steps.map((label, index) => (
           <Stack
-            key={step.label}
+            key={label}
             direction="row"
             sx={{ gap: 1.5, alignItems: 'center', px: 2, py: 1.25 }}
           >
-            <Box sx={{ color: step.done ? 'success.main' : 'text.disabled', display: 'flex' }}>
-              <CheckCircleIcon size={18} />
-            </Box>
-            <Typography
-              variant="body2"
-              sx={{ flex: 1, textDecoration: step.done ? 'line-through' : 'none' }}
-              color={step.done ? 'text.secondary' : 'text.primary'}
+            <Box
+              sx={{
+                width: 20,
+                height: 20,
+                flexShrink: 0,
+                borderRadius: 999,
+                display: 'grid',
+                placeItems: 'center',
+                border: '1px solid',
+                borderColor: 'divider',
+              }}
+              aria-hidden
             >
-              {step.label}
+              <Typography variant="caption" color="text.secondary">
+                {index + 1}
+              </Typography>
+            </Box>
+            <Typography variant="body2" sx={{ flex: 1 }}>
+              {label}
             </Typography>
-            {/* No button while the workspace is empty: the card above already
-                carries both ways in, and two "start here" controls in one view
-                is one too many. */}
-            {arrived && step === next && (
+            {/* One way in, on the step it belongs to. Suppressed while the
+                workspace is empty, because the card above already carries it. */}
+            {index === 0 && invoices.length > 0 && (
               <Button
                 variant="secondary"
                 appearance="outline"
@@ -267,17 +256,6 @@ function FirstStepsMessage() {
                 onClick={() => goTo('queue')}
               >
                 Open the queue
-              </Button>
-            )}
-            {next === undefined && step === steps[steps.length - 1] && (
-              <Button
-                variant="secondary"
-                appearance="outline"
-                size="sm"
-                endIcon={<ArrowRightIcon size={14} />}
-                onClick={() => goTo('queue')}
-              >
-                See them
               </Button>
             )}
           </Stack>
