@@ -47,6 +47,7 @@ import type {
   InvoiceSource,
   Member,
   SourceId,
+  WorkflowKey,
   MemoryPattern,
   RoutePath,
   Screen,
@@ -213,8 +214,8 @@ interface Store {
   ingestUpload: (files: { name: string; kind: DocumentKind }[]) => void;
 
   /* People */
-  inviteMember: (email: string, invoiceProcessing: WorkflowRole, agenticSearch: WorkflowRole) => void;
-  setMemberRole: (id: string, workflow: 'invoiceProcessing' | 'agenticSearch', role: WorkflowRole) => void;
+  inviteMember: (email: string, invoiceProcessing: WorkflowRole) => void;
+  setMemberRole: (id: string, workflow: WorkflowKey, role: WorkflowRole) => void;
   toggleSuspend: (id: string) => void;
   removeMember: (id: string) => void;
 }
@@ -1029,7 +1030,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   /* ── People ─────────────────────────────────────────────────────────── */
 
   const inviteMember = React.useCallback<Store['inviteMember']>(
-    (email, invoiceProcessing, agenticSearch) => {
+    (email, invoiceProcessing) => {
       setMembers((previous) => {
         const existing = previous.find((m) => m.email.toLowerCase() === email.toLowerCase());
         // Inviting an existing member is a no-op; a second invite to a pending
@@ -1042,7 +1043,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             name: email,
             email,
             invoiceProcessing,
-            agenticSearch,
             status: 'Invite pending',
             lastActive: 'Invited just now',
             isWorkspaceOwner: false,
@@ -1062,7 +1062,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         previous.map((m) => (m.id === id ? { ...m, [workflow]: role } : m)),
       );
       const who = members.find((m) => m.id === id)?.name ?? id;
-      log('Role changed', `${who} · ${workflow === 'invoiceProcessing' ? 'Invoice Processing' : 'Agentic Search'}: ${role}`);
+      void workflow;
+      log('Role changed', `${who} · Invoice Processing: ${role}`);
     },
     [members, log],
   );

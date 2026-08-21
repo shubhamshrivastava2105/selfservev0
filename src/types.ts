@@ -323,7 +323,6 @@ export interface Member {
   name: string;
   email: string;
   invoiceProcessing: WorkflowRole;
-  agenticSearch: WorkflowRole;
   status: MemberStatus;
   lastActive: string;
   isWorkspaceOwner: boolean;
@@ -376,20 +375,19 @@ export type NeoScope = 'workspace' | 'workflow';
 
 /** A source Ask Neo can ground an answer in, for the summary on the page. */
 /** The workflows a workspace can run. Membership is per person, per workflow. */
-export type WorkflowKey = 'invoiceProcessing' | 'agenticSearch';
+export type WorkflowKey = 'invoiceProcessing';
 
-export type SourceId =
-  | `workflow:${WorkflowKey}`
-  | 'uploads'
-  | 'integration:zohoBooks'
-  | 'integration:mailbox'
-  | 'integration:ticketing';
-
-export type SourceGroup = 'Workflows' | 'Your uploads' | 'Connected systems';
+/**
+ * What a question may be answered from.
+ *
+ * A workflow, or the documents you attached by hand. Connected systems are not
+ * on this list on purpose: an ERP or a mailbox is reached through the workflow
+ * that ingests from it, so it is not a source you pick separately.
+ */
+export type SourceId = `workflow:${WorkflowKey}` | 'uploads';
 
 export interface GroundingSource {
   id: SourceId;
-  group: SourceGroup;
   label: string;
   detail: string;
   connected: boolean;

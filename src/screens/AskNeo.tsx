@@ -468,10 +468,9 @@ function AttachmentMenu() {
 /**
  * Which sources a question may draw on.
  *
- * Only the workflows this person holds a role in appear: reading across
- * workflows is what this surface is for, but not across ones they are not part
- * of. Switching one off is honoured in the answer — Neo names the source it
- * would have used rather than pretending the question has no answer.
+ * Only workflows this person holds a role in appear, plus the documents they
+ * attached by hand. Switching one off is honored in the answer: Neo names the
+ * source it would have used rather than pretending the question has no answer.
  */
 function SourcePicker() {
   const store = useStore();
@@ -490,8 +489,6 @@ function SourcePicker() {
   const isOn = (id: (typeof sources)[number]['id']) =>
     selectedSources === null || selectedSources.includes(id);
   const onCount = sources.filter((s) => isOn(s.id)).length;
-
-  const groups = ['Workflows', 'Your uploads', 'Connected systems'] as const;
 
   return (
     <>
@@ -517,49 +514,35 @@ function SourcePicker() {
         transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
         sx={{ '& .MuiMenu-paper': { minWidth: 380, maxWidth: 460 } }}
       >
-        {groups.map((group) => {
-          const inGroup = sources.filter((s) => s.group === group);
-          if (inGroup.length === 0) return null;
-          return (
-            <React.Fragment key={group}>
-              <MenuItem variant="secondary" disabled>
-                {group}
-              </MenuItem>
-              {inGroup.map((source) => (
-                <MenuItem
-                  key={source.id}
-                  // A checkable menu item, rather than a checkbox nested inside
-                  // one: Atoms' Checkbox omits inputProps, so it could not be
-                  // named, and a focusable control inside a menuitem is its own
-                  // problem. The row is the control.
-                  role="menuitemcheckbox"
-                  aria-checked={isOn(source.id)}
-                  onClick={() => setSourceSelected(source.id, !isOn(source.id))}
-                  sx={{ alignItems: 'flex-start' }}
-                >
-                  <Box sx={{ width: 16, flexShrink: 0, pt: 0.25 }} aria-hidden>
-                    {isOn(source.id) && <CheckIcon size={16} />}
-                  </Box>
-                  <Stack sx={{ flex: 1, minWidth: 0, gap: 0 }}>
-                    <Typography variant="body2">{source.label}</Typography>
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{ whiteSpace: 'normal' }}
-                    >
-                      {source.detail}
-                    </Typography>
-                  </Stack>
-                </MenuItem>
-              ))}
-            </React.Fragment>
-          );
-        })}
+        {sources.map((source) => (
+          <MenuItem
+            key={source.id}
+            // A checkable menu item, rather than a checkbox nested inside one:
+            // Atoms' Checkbox omits inputProps, so it could not be named, and a
+            // focusable control inside a menuitem is its own problem. The row is
+            // the control.
+            role="menuitemcheckbox"
+            aria-checked={isOn(source.id)}
+            onClick={() => setSourceSelected(source.id, !isOn(source.id))}
+            sx={{ alignItems: 'flex-start' }}
+          >
+            <Box sx={{ width: 16, flexShrink: 0, pt: 0.25 }} aria-hidden>
+              {isOn(source.id) && <CheckIcon size={16} />}
+            </Box>
+            <Stack sx={{ flex: 1, minWidth: 0, gap: 0 }}>
+              <Typography variant="body2">{source.label}</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'normal' }}>
+                {source.detail}
+              </Typography>
+            </Stack>
+          </MenuItem>
+        ))}
         <Divider />
         <MenuItem variant="secondary" disabled sx={{ whiteSpace: 'normal' }}>
           <Typography variant="caption" color="text.secondary">
-            A workflow you hold no role in is not listed. Ask your workspace owner for access and
-            it appears here.
+            A workflow you hold no role in is not listed. What a workflow reads from — an ERP, a
+            mailbox, a ticketing system — comes in through the workflow, so it is not picked
+            separately.
           </Typography>
         </MenuItem>
       </Menu>

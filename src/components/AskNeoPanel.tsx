@@ -102,7 +102,7 @@ export function AskNeoPanel() {
     const trimmed = question.trim();
     if (trimmed === '') return;
     // Workflow scope: this panel stays inside Invoice Processing. Documents,
-    // connected systems and other workflows belong to the full page.
+    // uploaded documents belong to the full page.
     const result = answerQuestion(
       trimmed,
       { invoices, memory, config, members, documents, connections },
@@ -274,7 +274,7 @@ export function AskNeoPanel() {
                           </Button>
                         }
                       >
-                        It can read your documents and connected systems. I will carry the question over.
+                        It can read your uploaded documents. I will carry the question over.
                       </Alert>
                     )}
                     {turn.citations && turn.citations.length > 0 && (

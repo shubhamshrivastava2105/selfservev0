@@ -223,78 +223,51 @@ function answerFromDocuments(q: string, documents: IndexedDocument[]): NeoAnswer
 }
 
 /**
- * What Ask Neo can reach, grouped for the source picker.
+ * What Ask Neo can reach.
  *
- * A workflow only appears when the signed-in person holds a role in it: reading
- * across workflows is what this surface is for, but only across the ones they
- * are actually part of. Integrations are listed separately because they are
- * reached through the workspace rather than through any one workflow.
+ * Two kinds of thing: a workflow, and the documents you attached by hand. A
+ * workflow only appears when the signed-in person holds a role in it. What its
+ * integrations ingest — an ERP, a mailbox, a ticketing system — arrives through
+ * the workflow, so it is part of that source rather than a source of its own.
  */
-export function groundingSources(ctx: NeoContext): GroundingSource[] {
+function groundingSources(ctx: NeoContext): GroundingSource[] {
   const uploads = ctx.documents.filter((d) => d.origin === 'Upload');
   const ingested = ctx.documents.filter((d) => d.origin !== 'Upload');
   const pages = (docs: IndexedDocument[]) => docs.reduce((sum, d) => sum + d.pages, 0);
-  const role = (key: 'invoiceProcessing' | 'agenticSearch') => ctx.viewer?.[key] ?? 'None';
   const count = (docs: IndexedDocument[]) =>
     `${docs.length} document${docs.length === 1 ? '' : 's'}, ${pages(docs).toLocaleString('en-US')} pages`;
+
+  /** The systems feeding the workflow, named so their absence is not a mystery. */
+  const feeds = [
+    ctx.connections.zohoBooks ? 'Zoho Books' : null,
+    ctx.connections.mailboxProvider ? 'your mailbox' : null,
+    ctx.connections.ticketing
+      ? ctx.connections.ticketing === 'freshdesk'
+        ? 'Freshdesk'
+        : 'Zendesk'
+      : null,
+  ].filter(Boolean);
 
   return [
     {
       id: 'workflow:invoiceProcessing',
-      group: 'Workflows',
       label: 'Invoice Processing',
-      detail: `${ctx.invoices.length} invoice records, with their POs, receipts and audit trails`,
+      detail: [
+        `${ctx.invoices.length} invoice records, with their POs, receipts and audit trails`,
+        feeds.length > 0 ? `reading from ${feeds.join(', ')}` : null,
+        ingested.length > 0 ? `${count(ingested)} ingested` : null,
+      ]
+        .filter(Boolean)
+        .join(' · '),
       connected: true,
-      available: role('invoiceProcessing') !== 'None',
-    },
-    {
-      id: 'workflow:agenticSearch',
-      group: 'Workflows',
-      label: 'Agentic Search',
-      detail:
-        ingested.length === 0
-          ? 'Nothing has arrived through the workflow yet'
-          : `${count(ingested)}, ingested by the workflow`,
-      connected: true,
-      available: role('agenticSearch') !== 'None',
+      available: (ctx.viewer?.invoiceProcessing ?? 'None') !== 'None',
     },
     {
       id: 'uploads',
-      group: 'Your uploads',
       label: 'Documents you uploaded',
       detail: uploads.length === 0 ? 'Nothing uploaded yet' : `${count(uploads)}, attached by hand`,
       connected: uploads.length > 0,
       available: true,
-    },
-    {
-      id: 'integration:zohoBooks',
-      group: 'Connected systems',
-      label: 'Zoho Books',
-      detail: ctx.connections.zohoBooks
-        ? 'Purchase orders, bills, chart of accounts, vendor master'
-        : 'Not connected',
-      connected: ctx.connections.zohoBooks,
-      available: ctx.connections.zohoBooks,
-    },
-    {
-      id: 'integration:mailbox',
-      group: 'Connected systems',
-      label: 'Mailbox',
-      detail: ctx.connections.mailboxProvider
-        ? `${ctx.connections.mailboxAddress} · ${ctx.connections.mailboxFolder}`
-        : 'Not connected',
-      connected: Boolean(ctx.connections.mailboxProvider),
-      available: Boolean(ctx.connections.mailboxProvider),
-    },
-    {
-      id: 'integration:ticketing',
-      group: 'Connected systems',
-      label: 'Ticketing',
-      detail: ctx.connections.ticketing
-        ? `${ctx.connections.ticketing === 'freshdesk' ? 'Freshdesk' : 'Zendesk'} tickets and their attachments`
-        : 'Not connected',
-      connected: Boolean(ctx.connections.ticketing),
-      available: Boolean(ctx.connections.ticketing),
     },
   ];
 }
@@ -475,18 +448,19 @@ export function answerQuestion(
    */
   const readable = [
     ...(on('uploads') ? documents.filter((d) => d.origin === 'Upload') : []),
-    ...(on('workflow:agenticSearch') ? documents.filter((d) => d.origin !== 'Upload') : []),
+    // Anything a workflow ingested belongs to that workflow's source.
+    ...(on('workflow:invoiceProcessing') ? documents.filter((d) => d.origin !== 'Upload') : []),
   ];
   const excluded = documents.filter((d) => !readable.includes(d));
 
   /** Which switched-off source holds a document, for saying so by name. */
   const sourceOf = (doc: IndexedDocument) =>
-    doc.origin === 'Upload' ? 'your uploads' : 'Agentic Search';
+    doc.origin === 'Upload' ? 'your uploads' : 'Invoice Processing';
 
   if (scope === 'workspace' && needsDocuments && readable.length === 0 && documents.length > 0) {
     const off = [
       !on('uploads') ? 'your uploads' : null,
-      !on('workflow:agenticSearch') ? 'Agentic Search' : null,
+      !on('workflow:invoiceProcessing') ? 'Invoice Processing' : null,
     ].filter(Boolean);
     return {
       text: `That would come from your documents, and ${off.join(' and ')} ${off.length === 1 ? 'is' : 'are'} switched off as a source. Turn ${off.length === 1 ? 'it' : 'them'} back on and ask again.`,
@@ -507,13 +481,13 @@ export function answerQuestion(
 
   if (scope === 'workflow' && needsDocuments) {
     return {
-      text: "That one needs your documents or a connected system, and from here I only read Invoice Processing: this invoice, its purchase order and receipt, the checks that ran, and how this workflow is configured.",
+      text: "That one needs your uploaded documents, and from here I only read this invoice: its purchase order and receipt, the checks that ran, and how the workflow is configured.",
       outOfScope: true,
     };
   }
 
-  // Documents, connected systems and other workflows are the page's reach, not
-  // the panel's. The panel stays inside Invoice Processing on purpose.
+  // Uploaded documents are the page's reach, not the panel's. The panel stays on
+  // the invoice in front of you, on purpose.
   if (scope === 'workspace') {
     const fromDocuments = answerFromDocuments(q, readable);
     if (fromDocuments) return fromDocuments;
@@ -653,7 +627,7 @@ export function answerQuestion(
       text: members
         .map(
           (m) =>
-            `• ${m.name} — Invoice Processing: ${m.invoiceProcessing}, Agentic Search: ${m.agenticSearch} (${m.status})`,
+            `• ${m.name} — Invoice Processing: ${m.invoiceProcessing} (${m.status})`,
         )
         .join('\n'),
       citations: [{ label: 'Workspace members', detail: `${members.length} people` }],
@@ -692,7 +666,7 @@ export function answerQuestion(
 
   if (scope === 'workflow') {
     return {
-      text: "Here I only answer about Invoice Processing: this invoice, its purchase order and receipt, the checks that ran, and how this workflow is configured.\n\nYour indexed documents, connected systems and other workflows are outside what I can reach from here.",
+      text: "Here I only answer about this invoice: its purchase order and receipt, the checks that ran, and how the workflow is configured.\n\nYour uploaded documents are outside what I can reach from here. Ask Neo on its own page reads those.",
       outOfScope: true,
     };
   }

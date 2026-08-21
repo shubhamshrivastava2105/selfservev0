@@ -48,7 +48,7 @@ import { PageBody, SectionCard } from '../components/common';
 import { ShellBar } from '../components/shell';
 import { money } from '../engine';
 import { elapsed, formatDateTime, formatDuration, formatRelative } from '../clock';
-import type { Member, WorkflowRole } from '../types';
+import type { Member, WorkflowKey, WorkflowRole } from '../types';
 
 const ROLES: WorkflowRole[] = ['Workflow admin', 'Reviewer', 'Agent', 'None'];
 
@@ -125,7 +125,6 @@ export function MembersScreen() {
   const [inviteOpen, setInviteOpen] = React.useState(false);
   const [inviteEmail, setInviteEmail] = React.useState('');
   const [inviteIp, setInviteIp] = React.useState<WorkflowRole>('Agent');
-  const [inviteAs, setInviteAs] = React.useState<WorkflowRole>('Agent');
   const [menuFor, setMenuFor] = React.useState<{ el: HTMLElement; member: Member } | null>(null);
   const [confirm, setConfirm] = React.useState<{ member: Member; kind: 'remove' | 'last-role' } | null>(null);
 
@@ -138,9 +137,9 @@ export function MembersScreen() {
    * Removing a member's only workflow role removes their workspace membership,
    * and is confirmed with the actor (Signup PRD §7).
    */
-  const changeRole = (member: Member, workflow: 'invoiceProcessing' | 'agenticSearch', role: WorkflowRole) => {
-    const other = workflow === 'invoiceProcessing' ? member.agenticSearch : member.invoiceProcessing;
-    if (role === 'None' && other === 'None' && !member.isWorkspaceOwner) {
+  const changeRole = (member: Member, workflow: WorkflowKey, role: WorkflowRole) => {
+    // With one workflow, giving up that role is giving up the workspace.
+    if (role === 'None' && !member.isWorkspaceOwner) {
       setConfirm({ member, kind: 'last-role' });
       return;
     }
@@ -162,7 +161,8 @@ export function MembersScreen() {
               Members
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Everyone in {profile.workspaceName || 'this workspace'}, and their role in each workflow.
+              Everyone in {profile.workspaceName || 'this workspace'}, and their role in Invoice
+              Processing.
             </Typography>
           </Stack>
 
@@ -173,7 +173,6 @@ export function MembersScreen() {
                   <TableRow>
                     <TableCell sx={{ width: '100%', minWidth: 240 }}>Member</TableCell>
                     <TableCell sx={{ minWidth: 190 }}>Invoice Processing</TableCell>
-                    <TableCell sx={{ minWidth: 190 }}>Agentic Search</TableCell>
                     <TableCell>Status</TableCell>
                     <TableCell>Last active</TableCell>
                     <TableCell align="right" padding="checkbox" />
@@ -211,15 +210,6 @@ export function MembersScreen() {
                           workflowLabel="Invoice Processing"
                           memberName={member.name}
                           onPick={(role) => changeRole(member, 'invoiceProcessing', role)}
-                        />
-                      </TableCell>
-
-                      <TableCell padding="none" sx={{ pr: 1 }}>
-                        <RolePicker
-                          value={member.agenticSearch}
-                          workflowLabel="Agentic Search"
-                          memberName={member.name}
-                          onPick={(role) => changeRole(member, 'agenticSearch', role)}
                         />
                       </TableCell>
 
@@ -373,7 +363,7 @@ export function MembersScreen() {
               fullWidth
             />
 
-            <Divider>A role per workflow</Divider>
+            <Divider>Their role</Divider>
 
             <Select
               label="Invoice Processing"
@@ -387,16 +377,6 @@ export function MembersScreen() {
               ))}
             </Select>
 
-            <Select
-              label="Agentic Search"
-              value={inviteAs}
-              onChange={(event) => setInviteAs(event.target.value as WorkflowRole)}
-              fullWidth
-            >
-              {ROLES.map((role) => (
-                <MenuItem key={role} value={role}>{role}</MenuItem>
-              ))}
-            </Select>
 
             <Alert severity="info" title="All three roles process invoices end to end">
               The difference is administrative: only a workflow admin can change configuration,
@@ -412,7 +392,7 @@ export function MembersScreen() {
             size="sm"
             disabled={!emailValid || alreadyHere}
             onClick={() => {
-              inviteMember(inviteEmail, inviteIp, inviteAs);
+              inviteMember(inviteEmail, inviteIp);
               setInviteOpen(false);
               setInviteEmail('');
             }}
