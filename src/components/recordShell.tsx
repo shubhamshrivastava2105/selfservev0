@@ -3,71 +3,8 @@ import { Box, Button, IconButton, Stack, Tooltip, Typography } from '@neofloai/a
 import {
   ArrowRightIcon,
   ClockCounterClockwiseIcon,
-  FileTextIcon,
-  ListIcon,
-  ReadCvLogoIcon,
   SparkleIcon,
 } from '@neofloai/atoms/icons';
-
-/** The narrow rail beside a record: data, documents, history. */
-export type RecordView = 'data' | 'documents' | 'history';
-
-const VIEWS: { key: RecordView; label: string; Icon: React.ComponentType<{ size?: number }> }[] = [
-  { key: 'data', label: 'Extracted data', Icon: ReadCvLogoIcon },
-  { key: 'documents', label: 'Documents', Icon: FileTextIcon },
-  { key: 'history', label: 'History', Icon: ClockCounterClockwiseIcon },
-];
-
-const RAIL_PX = 76;
-
-/**
- * The icon rail on a record screen. It switches what you are looking at, not
- * which stage the invoice is in: the stage moves forward on the primary action
- * in the header.
- */
-export function RecordViewRail({
-  view,
-  onChange,
-}: {
-  view: RecordView;
-  onChange: (view: RecordView) => void;
-}) {
-  return (
-    <Stack
-      sx={{
-        width: RAIL_PX,
-        flexShrink: 0,
-        alignItems: 'center',
-        gap: 1,
-        pt: 2,
-        borderRight: '1px solid',
-        borderColor: 'divider',
-      }}
-    >
-      {VIEWS.map(({ key, label, Icon }) => {
-        const selected = view === key;
-        return (
-          <Tooltip key={key} title={label} placement="right">
-            <IconButton
-              variant="secondary"
-              appearance={selected ? 'outline' : 'text'}
-              size="md"
-              aria-label={label}
-              aria-pressed={selected}
-              onClick={() => onChange(key)}
-              sx={{
-                color: selected ? 'text.primary' : 'text.secondary',
-                backgroundColor: selected ? 'action.selected' : 'transparent',
-              }}
-            >
-              <Icon size={20} />
-            </IconButton>
-          </Tooltip>
-        );
-      })}
-    </Stack>
-  );
-}
 
 /**
  * The record header: a title, the facts that identify the invoice, and the
@@ -77,7 +14,8 @@ export function RecordViewRail({
 export function RecordHeader({
   title,
   meta,
-  onToggleRail,
+  onShowHistory,
+  historyActive,
   onAskNeo,
   onReject,
   rejectDisabled,
@@ -86,7 +24,9 @@ export function RecordHeader({
 }: {
   title: string;
   meta: { icon: React.ReactNode; label: string }[];
-  onToggleRail: () => void;
+  /** The audit trail, which the PRD requires reachable on every record. */
+  onShowHistory: () => void;
+  historyActive: boolean;
   onAskNeo?: () => void;
   onReject?: () => void;
   /** Proceed or Validate: whatever moves this stage on. Carries a trailing arrow. */
@@ -109,17 +49,6 @@ export function RecordHeader({
         flexShrink: 0,
       }}
     >
-      <IconButton
-        variant="secondary"
-        appearance="text"
-        size="sm"
-        aria-label="Toggle navigation"
-        onClick={onToggleRail}
-        sx={{ mt: 0.5 }}
-      >
-        <ListIcon />
-      </IconButton>
-
       <Stack sx={{ flex: 1, minWidth: 0, gap: 0.25 }}>
         <Typography variant="h5" component="h1">
           {title}
@@ -145,6 +74,18 @@ export function RecordHeader({
         direction="row"
         sx={{ gap: 1.5, alignItems: 'center', flexShrink: 0, '& .MuiButton-root': { whiteSpace: 'nowrap' } }}
       >
+        <Tooltip title={historyActive ? 'Back to the stage' : 'History'}>
+          <IconButton
+            variant="secondary"
+            appearance={historyActive ? 'outline' : 'text'}
+            size="sm"
+            aria-label={historyActive ? 'Back to the stage' : 'History'}
+            aria-pressed={historyActive}
+            onClick={onShowHistory}
+          >
+            <ClockCounterClockwiseIcon />
+          </IconButton>
+        </Tooltip>
         {onAskNeo && (
           <Button
             variant="primary"
@@ -163,6 +104,9 @@ export function RecordHeader({
             size="sm"
             disabled={rejectDisabled}
             onClick={onReject}
+            // Tinted rather than a plain outline, which is how the product
+            // weights a destructive action next to the primary one.
+            sx={{ backgroundColor: rejectDisabled ? undefined : 'error.subtle' }}
           >
             Reject
           </Button>

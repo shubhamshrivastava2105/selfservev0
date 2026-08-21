@@ -88,13 +88,6 @@ export interface SessionProgress {
 interface Store {
   screen: Screen;
   goTo: (screen: Screen) => void;
-  /**
-   * Whether the app rail is showing. A record screen has its own icon rail, so
-   * two vertical navs would compete: the app rail folds away and the hamburger
-   * in the record header brings it back.
-   */
-  appRailOpen: boolean;
-  toggleAppRail: () => void;
 
   profile: Profile;
   signUp: (method: SignupMethod, firstName: string, lastName: string, email: string) => void;
@@ -231,7 +224,6 @@ export function useStore(): Store {
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [screen, setScreen] = React.useState<Screen>('signup');
-  const [appRailOpen, setAppRailOpen] = React.useState(false);
   const [profile, setProfile] = React.useState<Profile>({
     firstName: '',
     lastName: '',
@@ -1373,13 +1365,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const value: Store = {
     screen,
-    goTo: (next: Screen) => {
-      // Leaving a record hands the rail back.
-      if (next !== 'invoice') setAppRailOpen(false);
-      goTo(next);
-    },
-    appRailOpen,
-    toggleAppRail: () => setAppRailOpen((previous) => !previous),
+    goTo,
     profile,
     signUp,
     acceptInvite,

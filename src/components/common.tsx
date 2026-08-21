@@ -54,13 +54,18 @@ export function ColorModeToggle() {
 
 /* ── Status ───────────────────────────────────────────────────────────── */
 
+/**
+ * A colour per stage, as the product distinguishes them: extraction blue,
+ * matching purple, posting indigo, attention amber. Blue appears again on
+ * Exported, which only ever shows in the Closed tab where extraction cannot.
+ */
 const STATUS_VARIANT: Record<InvoiceStatus, ChipVariant> = {
   Extraction: 'information',
-  Matching: 'information',
+  Matching: 'purple',
   'ERP posting': 'primary',
   'Action Required': 'warning',
   Posted: 'success',
-  Exported: 'purple',
+  Exported: 'information',
   Rejected: 'error',
 };
 

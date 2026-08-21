@@ -25,7 +25,7 @@ import {
   UploadSimpleIcon,
 } from '@neofloai/atoms/icons';
 import { useStore } from '../store';
-import { RecordHeader, RecordViewRail, type RecordView } from '../components/recordShell';
+import { RecordHeader } from '../components/recordShell';
 import { StatusChip } from '../components/common';
 import { DocumentPane } from './invoice/DocumentPane';
 import { ExtractedData } from './invoice/ExtractedData';
@@ -72,11 +72,11 @@ export function InvoiceDetailScreen() {
     heldDocumentsFor,
     simulatePosting,
     openAskNeo,
-    toggleAppRail,
   } = useStore();
 
   const invoice = invoices.find((i) => i.id === openInvoiceId);
-  const [view, setView] = React.useState<RecordView>('data');
+  // The stage, or its history. Documents live on the stages that carry them.
+  const [showHistory, setShowHistory] = React.useState(false);
   const [selectedFieldKey, setSelectedFieldKey] = React.useState<string | null>(null);
   const [overrideTarget, setOverrideTarget] = React.useState<{ rule: string; label: string } | null>(null);
   const [reason, setReason] = React.useState('');
@@ -86,7 +86,7 @@ export function InvoiceDetailScreen() {
   const [poDraft, setPoDraft] = React.useState('');
 
   React.useEffect(() => {
-    setView('data');
+    setShowHistory(false);
   }, [invoice?.id, invoice?.stage]);
 
   if (!invoice) {
@@ -166,7 +166,8 @@ export function InvoiceDetailScreen() {
           { icon: <CalendarBlankIcon size={14} />, label: formatDate(invoice.invoiceDate) },
           { icon: <CurrencyDollarIcon size={14} />, label: money(invoice.amount, invoice.currency) },
         ]}
-        onToggleRail={toggleAppRail}
+        onShowHistory={() => setShowHistory((previous) => !previous)}
+        historyActive={showHistory}
         onAskNeo={stage === 'posting' ? undefined : () => openAskNeo(invoice.id)}
         onReject={() => setRejectOpen(true)}
         rejectDisabled={readOnly}
@@ -175,8 +176,6 @@ export function InvoiceDetailScreen() {
       />
 
       <Stack direction="row" sx={{ flex: 1, minHeight: 0 }}>
-        <RecordViewRail view={view} onChange={setView} />
-
         <Stack sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>
           {/* Status strip: what the PRD adds that the stage header does not carry. */}
           <Stack
@@ -196,7 +195,7 @@ export function InvoiceDetailScreen() {
           </Stack>
 
           {/* A hard block stops the stage, so it sits above whatever view is open. */}
-          {view === 'data' && block && (
+          {!showHistory && block && (
             <Box sx={{ px: 3, pb: 2 }}>
               <Alert
                 severity="error"
@@ -268,7 +267,7 @@ export function InvoiceDetailScreen() {
           )}
 
           {/* Outstanding variances, with the override the PRD requires. */}
-          {view === 'data' && stage === 'matching' && !block && !readOnly &&
+          {!showHistory && stage === 'matching' && !block && !readOnly &&
             (outstanding.metadata.length > 0 || outstanding.line.length > 0) && (
               <Box sx={{ px: 3, pb: 2 }}>
                 <Alert severity="warning" title="A variance is beyond tolerance">
@@ -311,7 +310,7 @@ export function InvoiceDetailScreen() {
               </Box>
             )}
 
-          {invoice.matchResult && invoice.matchResult.matchTypeUsed !== config.matchType && view === 'data' && (
+          {invoice.matchResult && invoice.matchResult.matchTypeUsed !== config.matchType && !showHistory && (
             <Box sx={{ px: 3, pb: 2 }}>
               <Alert
                 severity="info"
@@ -334,7 +333,7 @@ export function InvoiceDetailScreen() {
           )}
 
           {/* The stage itself */}
-          {view === 'data' && (
+          {!showHistory && (
             <Stack direction="row" sx={{ flex: 1, minHeight: 0 }}>
               {stage === 'extraction' && (
                 <>
@@ -357,46 +356,7 @@ export function InvoiceDetailScreen() {
             </Stack>
           )}
 
-          {view === 'documents' && (
-            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 3 }}>
-              <Stack sx={{ gap: 1.5 }}>
-                <Typography variant="body2" weight="medium">
-                  Documents on this invoice
-                </Typography>
-                {[
-                  { name: `${invoice.number.toLowerCase()}.pdf`, kind: 'Invoice' },
-                  ...(invoice.poNumber ? [{ name: `${invoice.poNumber}.pdf`, kind: `Purchase order · ${invoice.poSource}` }] : []),
-                  ...(invoice.grnSource !== 'none' ? [{ name: 'goods-receipt.pdf', kind: `Goods receipt · ${invoice.grnSource}` }] : []),
-                  ...invoice.attachments.map((a) => ({ name: a.name, kind: a.kind })),
-                ].map((doc) => (
-                  <Stack
-                    key={doc.name}
-                    direction="row"
-                    sx={{
-                      gap: 1.5,
-                      alignItems: 'center',
-                      p: 2,
-                      borderRadius: 1,
-                      border: '1px solid',
-                      borderColor: 'divider',
-                    }}
-                  >
-                    <FilePdfIcon size={18} />
-                    <Stack sx={{ flex: 1, minWidth: 0, gap: 0 }}>
-                      <Typography variant="body2" weight="medium">
-                        {doc.name}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {doc.kind}
-                      </Typography>
-                    </Stack>
-                  </Stack>
-                ))}
-              </Stack>
-            </Box>
-          )}
-
-          {view === 'history' && (
+          {showHistory && (
             <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 3 }}>
               <Stepper activeStep={-1}>
                 {[...invoice.audit].reverse().map((entry, index) => (
