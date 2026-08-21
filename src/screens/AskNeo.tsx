@@ -16,6 +16,7 @@ import {
 } from '@neofloai/atoms';
 import {
   ArrowRightIcon,
+  CheckCircleIcon,
   CaretDownIcon,
   CheckIcon,
   DatabaseIcon,
@@ -186,6 +187,105 @@ function BriefingMessage({ firstVisit }: { firstVisit: boolean }) {
           />
         )}
       </Stack>
+    </NeoMessage>
+  );
+}
+
+/**
+ * The path to a first posted invoice, on a first visit only.
+ *
+ * Three steps, and every one of them is the product doing its job — nothing
+ * about setup, because matching, tolerances and the ERP connection arrive
+ * filled in.
+ *
+ * It shows whether or not the steps are done, because on a first visit this is
+ * an explanation before it is a tracker: someone joining a workspace that
+ * already posts invoices learns the shape of the thing, and a struck-through
+ * line reads as "this already happens here" rather than as a chore they missed.
+ *
+ * Progress is read off the invoices rather than tracked. A counter kept
+ * alongside the records can disagree with them; a derived one cannot.
+ */
+function FirstStepsMessage() {
+  const { invoices, goTo } = useStore();
+
+  const arrived = invoices.length > 0;
+  const looked = invoices.some(
+    (i) =>
+      i.stage !== 'extraction' ||
+      i.overrides.length > 0 ||
+      i.invoiceFields.some((f) => f.editedFrom !== undefined),
+  );
+  const closed = invoices.some((i) => ['Posted', 'Exported'].includes(i.status));
+
+  const steps = [
+    { label: 'An invoice arrives, and gets read', done: arrived },
+    { label: 'You check the reading and the match', done: looked },
+    { label: 'It posts to your books', done: closed },
+  ];
+  const doneCount = steps.filter((s) => s.done).length;
+  const next = steps.find((s) => !s.done);
+
+  return (
+    <NeoMessage>
+      <Typography variant="body2">
+        {doneCount === 0
+          ? 'Three things happen on the way to a posted invoice. That is the whole path.'
+          : doneCount === steps.length
+            ? 'This is the whole path to a posted invoice, and all of it is already running here.'
+            : `This is the whole path to a posted invoice. ${doneCount} of ${steps.length} has happened already.`}
+      </Typography>
+      <Stack
+        sx={{ borderRadius: 1, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}
+        divider={<Divider />}
+      >
+        {steps.map((step) => (
+          <Stack
+            key={step.label}
+            direction="row"
+            sx={{ gap: 1.5, alignItems: 'center', px: 2, py: 1.25 }}
+          >
+            <Box sx={{ color: step.done ? 'success.main' : 'text.disabled', display: 'flex' }}>
+              <CheckCircleIcon size={18} />
+            </Box>
+            <Typography
+              variant="body2"
+              sx={{ flex: 1, textDecoration: step.done ? 'line-through' : 'none' }}
+              color={step.done ? 'text.secondary' : 'text.primary'}
+            >
+              {step.label}
+            </Typography>
+            {/* No button while the workspace is empty: the card above already
+                carries both ways in, and two "start here" controls in one view
+                is one too many. */}
+            {arrived && step === next && (
+              <Button
+                variant="secondary"
+                appearance="outline"
+                size="sm"
+                endIcon={<ArrowRightIcon size={14} />}
+                onClick={() => goTo('queue')}
+              >
+                Open the queue
+              </Button>
+            )}
+            {next === undefined && step === steps[steps.length - 1] && (
+              <Button
+                variant="secondary"
+                appearance="outline"
+                size="sm"
+                endIcon={<ArrowRightIcon size={14} />}
+                onClick={() => goTo('queue')}
+              >
+                See them
+              </Button>
+            )}
+          </Stack>
+        ))}
+      </Stack>
+      <Typography variant="caption" color="text.secondary">
+        Nothing to configure first — matching, tolerances and your ERP connection are already set.
+      </Typography>
     </NeoMessage>
   );
 }
@@ -776,6 +876,7 @@ export function AskNeoScreen() {
                     workspace gets one way in rather than five. */}
                 <StartHereMessage />
                 <BriefingMessage firstVisit={firstVisit} />
+                {firstVisit && <FirstStepsMessage />}
                 {!firstVisit && <ResumeMessage />}
               </>
             )}
