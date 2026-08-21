@@ -15,7 +15,6 @@ import {
   Typography,
 } from '@neofloai/atoms';
 import {
-  ArrowLeftIcon,
   ArrowRightIcon,
   CaretDownIcon,
   CheckCircleIcon,
@@ -410,7 +409,7 @@ function AttachmentMenu({ onAttached }: { onAttached: (names: string[]) => void 
           // Cleared so picking the same file twice fires change both times.
           event.target.value = '';
         }}
-        sx={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
+        sx={{ position: 'absolute', width: '1px', height: '1px', opacity: 0, pointerEvents: 'none' }}
       />
 
       <Tooltip title="Attach something to ask about">
@@ -562,7 +561,7 @@ function SourcePicker() {
           startIcon={<DatabaseIcon size={16} />}
           endIcon={<CaretDownIcon size={14} />}
           onClick={(event) => setAnchor(event.currentTarget)}
-          sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
+          sx={{ textTransform: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}
         >
           {onCount === sources.length ? 'All sources' : `${onCount} of ${sources.length} sources`}
         </Button>
@@ -620,7 +619,6 @@ export function AskNeoScreen() {
     invoices,
     chat,
     pushChat,
-    clearChat,
     profile,
     landingMode,
     handoffQuestion,
@@ -697,21 +695,9 @@ export function AskNeoScreen() {
 
   return (
     <>
-      <ShellBar>
-        {/* Threads live in the rail, which never goes away. This is the action
-            on the thread you are reading, not a second route to the list. */}
-        {chat.length > 0 && (
-          <Button
-            variant="secondary"
-            appearance="outline"
-            size="sm"
-            startIcon={<ArrowLeftIcon size={16} />}
-            onClick={clearChat}
-          >
-            New question
-          </Button>
-        )}
-      </ShellBar>
+      {/* Nothing of its own here. Starting a thread and picking one both live
+          in the rail's Threads section, which is on screen either way. */}
+      <ShellBar />
 
       {/* The thread. Everything Neo has to say, oldest first. */}
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
