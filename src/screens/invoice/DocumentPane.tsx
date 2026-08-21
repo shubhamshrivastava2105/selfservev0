@@ -29,10 +29,13 @@ export function DocumentPane({
   invoice,
   selected,
   onSelect,
+  readOnly,
 }: {
   invoice: Invoice;
   selected: ExtractedField | null;
   onSelect: (key: string | null) => void;
+  /** A closed record, or an earlier stage being looked back at: the callout reads. */
+  readOnly?: boolean;
 }) {
   const { config, editField } = useStore();
   const [zoom, setZoom] = React.useState(100);
@@ -205,6 +208,7 @@ export function DocumentPane({
                   <TextField
                     aria-label={`${selected.label} value`}
                     value={draft}
+                    disabled={readOnly}
                     onChange={(event) => setDraft(event.target.value)}
                     onBlur={commit}
                     onKeyDown={(event) => {
@@ -224,9 +228,11 @@ export function DocumentPane({
                     <Button variant="secondary" appearance="text" size="sm" onClick={() => onSelect(null)}>
                       Close
                     </Button>
-                    <Button size="sm" disabled={draft === selected.value} onClick={commit}>
-                      Save
-                    </Button>
+                    {!readOnly && (
+                      <Button size="sm" disabled={draft === selected.value} onClick={commit}>
+                        Save
+                      </Button>
+                    )}
                   </Stack>
                 </Stack>
               </Box>

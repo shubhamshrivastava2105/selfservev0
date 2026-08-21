@@ -483,7 +483,9 @@ function erpFor(
     refKeyHead1: '',
     refKeyHead2: '',
     assignment: '',
-    docHeader: '',
+    // The ERP's own line of prose about the document. Seeded from the first
+    // line, which is what an AP clerk types there.
+    docHeader: invoice.lines[0]?.description ?? '',
     refKey2: '',
     variance: Number((invoice.amount - poTotal).toFixed(2)),
     simulated: null,

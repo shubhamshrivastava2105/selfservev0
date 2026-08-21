@@ -19,6 +19,7 @@ export function CodePicker({
   onPick,
   minWidth = 150,
   fullWidth = true,
+  bordered = false,
 }: {
   value: string;
   options: string[];
@@ -31,6 +32,12 @@ export function CodePicker({
   minWidth?: number;
   /** Fills its cell, so a column of these lines up as one grid. */
   fullWidth?: boolean;
+  /**
+   * Outlined. Off inside a line table, where the product's cells read as table
+   * content with a caret at the cell's right edge rather than as form controls.
+   * On for a standalone control such as rows-per-page.
+   */
+  bordered?: boolean;
 }) {
   const [anchor, setAnchor] = React.useState<HTMLElement | null>(null);
 
@@ -38,7 +45,7 @@ export function CodePicker({
     <>
       <Button
         variant="secondary"
-        appearance="outline"
+        appearance={bordered ? 'outline' : 'text'}
         size="sm"
         disabled={disabled}
         fullWidth={fullWidth}
@@ -51,6 +58,16 @@ export function CodePicker({
           fontWeight: 400,
           minWidth,
           whiteSpace: 'nowrap',
+          ...(bordered
+            ? {}
+            : {
+                color: 'text.primary',
+                px: 0,
+                // The caret belongs at the cell's right edge, so the column of
+                // them lines up whatever the values are.
+                '& .MuiButton-endIcon': { ml: 'auto', color: 'text.secondary' },
+                '&:hover': { backgroundColor: 'action.hover' },
+              }),
         }}
       >
         {value || 'Not set'}

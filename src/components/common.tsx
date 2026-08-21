@@ -322,3 +322,12 @@ export function Fact({ label, value }: { label: string; value: React.ReactNode }
     </Stack>
   );
 }
+
+/** The red asterisk the ERP puts against a field it will not accept empty. */
+export function Required() {
+  return (
+    <Box component="span" sx={{ color: 'error.main', ml: 0.25 }} aria-hidden>
+      *
+    </Box>
+  );
+}

@@ -31,6 +31,7 @@ import {
 } from '@neofloai/atoms/icons';
 import { VAT_CODES, WHT_CODES } from '../../data';
 import { CodePicker, ColumnCodePicker } from '../../components/CodePicker';
+import { Required } from '../../components/common';
 import { useStore } from '../../store';
 import { money } from '../../engine';
 import { formatDateTime } from '../../clock';
@@ -60,16 +61,36 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
     }
   }, [erp.simulated]);
 
-  const fixed = (label: string, value: string) => (
+  const fixed = (label: string, value: string, required?: boolean) => (
     <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-      <TextField label={label} value={value} disabled fullWidth />
+      <TextField
+        label={
+          <>
+            {label}
+            {required && <Required />}
+          </>
+        }
+        value={value}
+        disabled
+        fullWidth
+      />
     </Grid>
   );
 
-  const editable = (label: string, key: keyof ErpPayload, placeholder?: string) => (
+  const editable = (
+    label: string,
+    key: keyof ErpPayload,
+    placeholder?: string,
+    required?: boolean,
+  ) => (
     <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
       <TextField
-        label={label}
+        label={
+          <>
+            {label}
+            {required && <Required />}
+          </>
+        }
         placeholder={placeholder}
         value={String(erp[key] ?? '')}
         disabled={readOnly}
@@ -84,12 +105,12 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         <Stack sx={{ px: 3, pt: 3, pb: 2, gap: 3 }}>
           <Grid container spacing={2.5}>
-            {fixed('PO Number *', erp.poNumber || '—')}
-            {fixed('Amount before VAT *', money(erp.amountBeforeVat, invoice.currency))}
-            {fixed('Total amount after VAT *', money(erp.totalAfterVat, invoice.currency))}
-            {fixed('Reference Number *', erp.referenceNumber)}
+            {fixed('PO Number', erp.poNumber || '—', true)}
+            {fixed('Amount before VAT', money(erp.amountBeforeVat, invoice.currency), true)}
+            {fixed('Total amount after VAT', money(erp.totalAfterVat, invoice.currency), true)}
+            {fixed('Reference Number', erp.referenceNumber, true)}
 
-            {editable('Text *', 'text')}
+            {editable('Text', 'text', undefined, true)}
             {editable('Ref Key (Head) 1', 'refKeyHead1', 'Enter Ref Key (head) 1')}
             {editable('Ref Key (Head) 2', 'refKeyHead2', 'Label Text')}
             {editable('Assignment', 'assignment', 'Label Text')}
@@ -102,20 +123,32 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
           <Stack sx={{ gap: 1 }}>
             <Typography variant="body2">Documents ({1 + invoice.attachments.length})</Typography>
             <Stack direction="row" sx={{ gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
-              <Stack direction="row" sx={{ gap: 0.5, alignItems: 'stretch' }}>
+              {/* One dashed drop zone holding the button and its caret, as the
+                  product draws it, rather than two separate controls. */}
+              <Stack
+                direction="row"
+                sx={{
+                  alignItems: 'center',
+                  border: '1px dashed',
+                  borderColor: 'divider',
+                  borderRadius: 1,
+                  p: 0.25,
+                }}
+              >
                 <Button
                   variant="secondary"
-                  appearance="outline"
+                  appearance="text"
                   size="sm"
                   startIcon={<UploadSimpleIcon size={16} />}
                   disabled={readOnly}
-                  sx={{ borderStyle: 'dashed' }}
+                  sx={{ textTransform: 'none' }}
                 >
                   Upload Files
                 </Button>
+                <Box sx={{ width: '1px', alignSelf: 'stretch', backgroundColor: 'divider', mx: 0.25 }} />
                 <IconButton
                   variant="secondary"
-                  appearance="outline"
+                  appearance="text"
                   size="sm"
                   aria-label="Other ways to attach a document"
                   disabled={readOnly}
@@ -126,7 +159,7 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
               <Chip
                 size="sm"
                 variant="secondary"
-                icon={<FilePdfIcon size={12} />}
+                icon={<FilePdfIcon size={12} color="var(--mui-palette-error-main)" />}
                 label={`${invoice.number.toLowerCase()}.pdf`}
               />
               {invoice.attachments.map((a) => (
@@ -134,7 +167,7 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
                   key={a.name}
                   size="sm"
                   variant="secondary"
-                  icon={<FilePdfIcon size={12} />}
+                  icon={<FilePdfIcon size={12} color="var(--mui-palette-error-main)" />}
                   label={a.name}
                 />
               ))}
@@ -142,22 +175,39 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
           </Stack>
         </Stack>
 
-        <TableContainer sx={{ borderTop: '1px solid', borderColor: 'divider' }}>
+        <TableContainer
+          sx={{
+            borderTop: '1px solid',
+            borderColor: 'divider',
+            // The product's lines breathe; a tight row makes the borderless
+            // pickers read as cramped text rather than as fields.
+            '& tbody .MuiTableCell-root': { py: 1.25 },
+            // Ruled columns, which is what stops a borderless picker reading as
+            // loose text: the rule is the field's edge.
+            '& thead .MuiTableCell-root:not(:last-of-type)': {
+              borderRight: '1px solid',
+              borderRightColor: 'divider',
+            },
+            '& .MuiTableCell-root:first-of-type, & .MuiTableCell-root:last-of-type': {
+              borderLeft: '1px solid',
+              borderLeftColor: 'divider',
+            },
+            '& .MuiTableCell-root:first-of-type': { borderLeft: 'none' },
+          }}
+        >
           <Table size="sm">
             <TableHead>
               <TableRow>
                 <TableCell sx={{ fontFamily: 'mono', width: 56 }}>#</TableCell>
-                <TableCell sx={{ fontFamily: 'mono', width: '100%' }}>Description</TableCell>
-                <TableCell sx={{ fontFamily: 'mono' }} align="right">
-                  Line Total
-                </TableCell>
-                <TableCell sx={{ fontFamily: 'mono', minWidth: 190 }}>
+                <TableCell sx={{ fontFamily: 'mono', width: '31%' }}>Description</TableCell>
+                <TableCell sx={{ fontFamily: 'mono', width: '23%' }}>Line Total</TableCell>
+                <TableCell sx={{ fontFamily: 'mono', width: '23%' }}>
                   <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>
                     <Box component="span" sx={{ flex: 1 }}>
-                      VAT/GST Code
+                      VAT Tax Code <Required />
                     </Box>
                     <ColumnCodePicker
-                      heading="VAT/GST code"
+                      heading="VAT tax code"
                       options={VAT_CODES}
                       disabled={readOnly}
                       onPickAll={(value) =>
@@ -166,13 +216,13 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
                     />
                   </Stack>
                 </TableCell>
-                <TableCell sx={{ fontFamily: 'mono', minWidth: 170 }}>
+                <TableCell sx={{ fontFamily: 'mono', width: '23%' }}>
                   <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>
                     <Box component="span" sx={{ flex: 1 }}>
-                      WHT Code
+                      WHT Tax Code <Required />
                     </Box>
                     <ColumnCodePicker
-                      heading="WHT code"
+                      heading="WHT tax code"
                       options={WHT_CODES}
                       disabled={readOnly}
                       onPickAll={(value) =>
@@ -189,10 +239,12 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
                 <TableRow key={l.id}>
                   <TableCell sx={{ fontFamily: 'mono' }}>{index + 1}</TableCell>
                   <TableCell>{l.description}</TableCell>
-                  <TableCell align="right">{money(l.invoiceLineTotal, invoice.currency)}</TableCell>
+                  <TableCell sx={{ fontFamily: 'mono' }}>
+                    {money(l.invoiceLineTotal, invoice.currency)}
+                  </TableCell>
                   <TableCell padding="none" sx={{ pr: 1 }}>
                     <CodePicker
-                      label="VAT/GST code"
+                      label="VAT tax code"
                       rowLabel={l.description}
                       value={l.vat}
                       options={VAT_CODES}
@@ -203,7 +255,7 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
                   </TableCell>
                   <TableCell padding="none" sx={{ pr: 1 }}>
                     <CodePicker
-                      label="WHT code"
+                      label="WHT tax code"
                       rowLabel={l.description}
                       value={l.wht}
                       options={WHT_CODES}
@@ -259,6 +311,7 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
               onPick={(value) => setRowsPerPage(Number(value))}
               minWidth={72}
               fullWidth={false}
+              bordered
             />
           </Stack>
           <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>

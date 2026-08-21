@@ -19,7 +19,6 @@ import {
 import {
   BuildingsIcon,
   CalendarBlankIcon,
-  CurrencyDollarIcon,
   FilePdfIcon,
   ReceiptIcon,
   UploadSimpleIcon,
@@ -39,18 +38,12 @@ import {
   extractionIsClear,
   isTerminal,
   matchingIsClear,
-  money,
   outstandingFindings,
   ruleNameForLine,
   ruleNameForMetadata,
 } from '../engine';
+import { StageNav, STAGE_LABEL } from '../components/StageNav';
 import type { Stage } from '../types';
-
-const STAGE_TITLE: Record<Stage, string> = {
-  extraction: 'Extraction',
-  matching: 'Matching',
-  posting: 'ERP Posting',
-};
 
 export function InvoiceDetailScreen() {
   const {
@@ -84,9 +77,16 @@ export function InvoiceDetailScreen() {
   const [rejectReason, setRejectReason] = React.useState('');
   const [poOpen, setPoOpen] = React.useState(false);
   const [poDraft, setPoDraft] = React.useState('');
+  /**
+   * An earlier stage the reader has gone back to. Null means the record's own
+   * stage, which is the normal case; it clears whenever the record moves so a
+   * reader is never left looking at the past after something happened.
+   */
+  const [viewStage, setViewStage] = React.useState<Stage | null>(null);
 
   React.useEffect(() => {
     setShowHistory(false);
+    setViewStage(null);
   }, [invoice?.id, invoice?.stage]);
 
   if (!invoice) {
@@ -102,6 +102,9 @@ export function InvoiceDetailScreen() {
 
   const readOnly = isTerminal(invoice);
   const stage = invoice.stage;
+  // What is on screen. Looking back does not change the record.
+  const shown = viewStage ?? stage;
+  const lookingBack = shown !== stage;
   const extractionClear = extractionIsClear(invoice, config);
   const matchClear = matchingIsClear(invoice);
   const block = invoice.matchResult?.hardBlock ?? null;
@@ -132,7 +135,10 @@ export function InvoiceDetailScreen() {
     const posts = connections.zohoBooks && !invoice.isSample;
     return {
       label: posts ? 'Proceed' : 'Download CSV',
-      disabled: readOnly || (posts && (!matchClear || missingTax > 0)),
+      // A dry run comes before a commit, which is why the product shows Proceed
+      // greyed next to a live Simulate.
+      disabled:
+        readOnly || (posts && (!matchClear || missingTax > 0 || !invoice.erp.simulated)),
       onClick: () => {
         if (posts) {
           postInvoice(invoice.id);
@@ -159,30 +165,41 @@ export function InvoiceDetailScreen() {
   return (
     <Stack sx={{ flex: 1, minHeight: 0 }}>
       <RecordHeader
-        title={STAGE_TITLE[stage]}
+        title={STAGE_LABEL[shown]}
         meta={[
           { icon: <ReceiptIcon size={14} />, label: `#${invoice.number.replace(/\D/g, '').slice(-3)}` },
           { icon: <BuildingsIcon size={14} />, label: invoice.vendor },
           { icon: <CalendarBlankIcon size={14} />, label: formatDate(invoice.invoiceDate) },
-          { icon: <CurrencyDollarIcon size={14} />, label: money(invoice.amount, invoice.currency) },
         ]}
         onShowHistory={() => setShowHistory((previous) => !previous)}
         historyActive={showHistory}
-        onAskNeo={stage === 'posting' ? undefined : () => openAskNeo(invoice.id)}
-        onReject={() => setRejectOpen(true)}
+        onAskNeo={shown === 'posting' ? undefined : () => openAskNeo(invoice.id)}
+        onReject={lookingBack ? undefined : () => setRejectOpen(true)}
         rejectDisabled={readOnly}
-        primary={primary}
-        secondary={secondary}
+        primary={lookingBack ? undefined : primary}
+        secondary={lookingBack ? undefined : secondary}
       />
 
       <Stack direction="row" sx={{ flex: 1, minHeight: 0 }}>
         <Stack sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>
-          {/* Status strip: what the PRD adds that the stage header does not carry. */}
+          {/* The stages, then what the PRD adds that the header does not carry. */}
           <Stack
             direction="row"
-            sx={{ px: 3, py: 1.5, gap: 1, alignItems: 'center', flexWrap: 'wrap' }}
+            sx={{ px: 3, py: 1.5, gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}
           >
-            <StatusChip status={invoice.status} />
+            <StageNav
+              reached={stage}
+              viewing={shown}
+              onView={(next) => setViewStage(next === stage ? null : next)}
+            />
+            {/* The status only earns a chip when it says something the stage
+                nav does not: closed, or stopped and waiting on a person. */}
+            {!['Extraction', 'Matching', 'ERP posting'].includes(invoice.status) && (
+              <>
+                <Box sx={{ width: '1px', height: 18, backgroundColor: 'divider' }} aria-hidden />
+                <StatusChip status={invoice.status} />
+              </>
+            )}
             {invoice.isSample && <Chip size="sm" variant="purple" label="Sample data" />}
             {invoice.stpPosted && <Chip size="sm" variant="success" label="Posted unsupervised" />}
             {invoice.overrides.length > 0 && (
@@ -193,6 +210,25 @@ export function InvoiceDetailScreen() {
               />
             )}
           </Stack>
+
+          {/* A look back is a read. Say so, rather than letting an inert
+              screen read as a broken one. */}
+          {!showHistory && lookingBack && (
+            <Box sx={{ px: 3, pb: 2 }}>
+              <Alert
+                severity="info"
+                title={`${STAGE_LABEL[shown]} is behind this invoice`}
+                action={
+                  <Button variant="secondary" appearance="outline" size="sm" onClick={() => setViewStage(null)}>
+                    Back to {STAGE_LABEL[stage]}
+                  </Button>
+                }
+              >
+                Shown as it was left. Editing happens on {STAGE_LABEL[stage]}, where the invoice is
+                now.
+              </Alert>
+            </Box>
+          )}
 
           {/* A hard block stops the stage, so it sits above whatever view is open. */}
           {!showHistory && block && (
@@ -267,7 +303,7 @@ export function InvoiceDetailScreen() {
           )}
 
           {/* Outstanding variances, with the override the PRD requires. */}
-          {!showHistory && stage === 'matching' && !block && !readOnly &&
+          {!showHistory && shown === 'matching' && !block && !readOnly &&
             (outstanding.metadata.length > 0 || outstanding.line.length > 0) && (
               <Box sx={{ px: 3, pb: 2 }}>
                 <Alert severity="warning" title="A variance is beyond tolerance">
@@ -335,7 +371,7 @@ export function InvoiceDetailScreen() {
           {/* The stage itself */}
           {!showHistory && (
             <Stack direction="row" sx={{ flex: 1, minHeight: 0 }}>
-              {stage === 'extraction' && (
+              {shown === 'extraction' && (
                 <>
                   <DocumentPane
                     invoice={invoice}
@@ -343,6 +379,7 @@ export function InvoiceDetailScreen() {
                       invoice.invoiceFields.find((f) => f.key === selectedFieldKey) ?? null
                     }
                     onSelect={setSelectedFieldKey}
+                    readOnly={readOnly || lookingBack}
                   />
                   <ExtractedData
                     invoice={invoice}
@@ -351,8 +388,8 @@ export function InvoiceDetailScreen() {
                   />
                 </>
               )}
-              {stage === 'matching' && <MatchingViews invoice={invoice} />}
-              {stage === 'posting' && <ErpPosting invoice={invoice} />}
+              {shown === 'matching' && <MatchingViews invoice={invoice} />}
+              {shown === 'posting' && <ErpPosting invoice={invoice} />}
             </Stack>
           )}
 
