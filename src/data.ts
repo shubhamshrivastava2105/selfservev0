@@ -557,7 +557,7 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     status: 'Extraction',
     invoiceFields: invoiceFields({
       number: 'INV-90551',
-      date: at(0, 8, 5),
+      date: formatDate(at(0, 8, 5)),
       vendor: 'Redwood Office Supply',
       vendorCode: '299017764 (ROS-1180)',
       vendorTaxId: '299017764 (ROS-1180)',
@@ -572,7 +572,7 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
       'zoho',
     ),
     grnFields: grnFields(
-      { number: 'GRN-US-90551', poRef: 'PO-US-90551', receiptDate: at(1, 14, 0) },
+      { number: 'GRN-US-90551', poRef: 'PO-US-90551', receiptDate: formatDate(at(1, 14, 0)) },
       'uploaded',
     ),
     poSource: 'zoho',
@@ -611,7 +611,7 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     status: 'Matching',
     invoiceFields: invoiceFields({
       number: 'INV-90448',
-      date: at(1, 11, 20),
+      date: formatDate(at(1, 11, 20)),
       vendor: 'Bayline Freight',
       vendorCode: '551220398 (BF-5589)',
       vendorTaxId: '551220398 (BF-5589)',
@@ -626,7 +626,7 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
       'zoho',
     ),
     grnFields: grnFields(
-      { number: 'GRN-US-90448', poRef: 'PO-US-90448', receiptDate: at(2, 9, 15) },
+      { number: 'GRN-US-90448', poRef: 'PO-US-90448', receiptDate: formatDate(at(2, 9, 15)) },
       'uploaded',
     ),
     poSource: 'zoho',

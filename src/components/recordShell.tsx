@@ -32,8 +32,12 @@ export function RecordHeader({
   historyActive: boolean;
   onAskNeo?: () => void;
   onReject?: () => void;
-  /** Proceed or Validate: whatever moves this stage on. Carries a trailing arrow. */
-  primary?: { label: string; disabled?: boolean; onClick: () => void };
+  /**
+   * Whatever moves this stage on. Carries a trailing arrow, and when it is
+   * disabled it has to say why — a greyed primary action with no reason is the
+   * one thing on this screen a person cannot work out for themselves.
+   */
+  primary?: { label: string; disabled?: boolean; onClick: () => void; because?: string };
   /** Reject shows disabled rather than vanishing once a record is closed. */
   rejectDisabled?: boolean;
   /** Simulate, on the posting stage. */
@@ -147,14 +151,21 @@ export function RecordHeader({
           </Button>
         )}
         {primary && (
-          <Button
-            size="sm"
-            endIcon={<ArrowRightIcon size={16} />}
-            disabled={primary.disabled}
-            onClick={primary.onClick}
-          >
-            {primary.label}
-          </Button>
+          // Wrapped, because a disabled button takes no pointer events and so
+          // never shows its own tooltip — which is exactly when the reason is
+          // needed.
+          <Tooltip title={primary.disabled ? (primary.because ?? '') : ''}>
+            <Box component="span" sx={{ display: 'inline-flex' }}>
+              <Button
+                size="sm"
+                endIcon={<ArrowRightIcon size={16} />}
+                disabled={primary.disabled}
+                onClick={primary.onClick}
+              >
+                {primary.label}
+              </Button>
+            </Box>
+          </Tooltip>
         )}
       </Stack>
     </Stack>

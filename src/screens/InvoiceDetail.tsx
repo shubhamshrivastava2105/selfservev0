@@ -117,10 +117,18 @@ export function InvoiceDetailScreen() {
    * input.
    */
   const primary = (() => {
+    /** The first thing standing in the way, in the order a person would hit it. */
+    const closed = readOnly ? `This invoice is ${invoice.status.toLowerCase()}.` : null;
+    const blocked = block ? HARD_BLOCK_COPY[block].title : null;
+    const outstandingCount = outstanding.metadata.length + outstanding.line.length;
+
     if (stage === 'extraction') {
       return {
         label: 'Proceed',
         disabled: readOnly || !extractionClear,
+        because:
+          closed ??
+          'Some mandatory fields are still empty. Fill them in on the right, or in the document.',
         onClick: () => advanceToMatching(invoice.id),
       };
     }
@@ -128,6 +136,12 @@ export function InvoiceDetailScreen() {
       return {
         label: 'Validate',
         disabled: readOnly || !matchClear,
+        because:
+          closed ??
+          blocked ??
+          (outstandingCount > 0
+            ? `${outstandingCount} variance${outstandingCount === 1 ? '' : 's'} beyond tolerance. Override each one with a reason, or reject the invoice.`
+            : 'Matching has not cleared yet.'),
         onClick: () => advanceToPosting(invoice.id),
       };
     }
@@ -143,6 +157,13 @@ export function InvoiceDetailScreen() {
         // A dry run comes before a commit, which is why the product shows the
         // primary grayed next to a live Simulate.
         disabled: readOnly || !matchClear || missingTax > 0 || !invoice.erp.simulated,
+        because:
+          closed ??
+          (!matchClear
+            ? 'Matching has not cleared yet.'
+            : missingTax > 0
+              ? `${missingTax} line${missingTax === 1 ? '' : 's'} still need a tax code.`
+              : 'Run Simulate first. It is a dry run against the ERP and nothing is written until it passes.'),
         onClick: () => postInvoice(invoice.id),
       };
     }
@@ -150,6 +171,7 @@ export function InvoiceDetailScreen() {
       // No simulation to wait for: nothing is being written anywhere.
       label: 'Download CSV',
       disabled: readOnly || !matchClear,
+      because: closed ?? 'Matching has not cleared yet.',
       onClick: () => {
         downloadCsv(`${invoice.number}-matched-data.csv`, buildCsv([invoice], config));
         markExported([invoice.id]);
