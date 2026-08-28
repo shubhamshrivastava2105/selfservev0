@@ -82,7 +82,7 @@ export const SCENARIOS: Scenario[] = [
     id: 'landing-first-visit',
     group: 'Landing',
     label: 'First visit',
-    detail: 'Welcome greeting, and the activation checklist leads.',
+    detail: 'Welcome greeting, and the three steps to a first posted invoice. No briefing yet.',
   },
   {
     id: 'landing-return',

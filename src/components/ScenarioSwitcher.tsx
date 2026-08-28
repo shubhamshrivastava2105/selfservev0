@@ -18,6 +18,7 @@ import {
   XIcon,
 } from '@neofloai/atoms/icons';
 import { useStore } from '../store';
+import { load as loadPersisted, save as savePersisted } from '../persist';
 import { SCENARIOS, SCENARIO_GROUPS, type ScenarioId } from '../scenarios';
 
 /**
@@ -54,6 +55,17 @@ export function ScenarioSwitcher() {
     return () => observer.disconnect();
   }, [composerDocked]);
   const [open, setOpen] = React.useState(false);
+  /**
+   * Whether the floating trigger is on screen.
+   *
+   * Off by default. This is a demo aid, and it was turning up in every
+   * screenshot taken of the product — a control nobody outside a demo should
+   * see, permanently in the corner of the thing being photographed. S opens the
+   * panel from anywhere, so nothing is lost by hiding the button, and the switch
+   * inside puts it back for anyone who would rather click.
+   */
+  const [pinned, setPinned] = React.useState(() => loadPersisted<boolean>('scenarioButton', false));
+  React.useEffect(() => savePersisted('scenarioButton', pinned), [pinned]);
   const [query, setQuery] = React.useState('');
   const [lastApplied, setLastApplied] = React.useState<ScenarioId | null>(null);
   const searchRef = React.useRef<HTMLInputElement | null>(null);
@@ -106,8 +118,9 @@ export function ScenarioSwitcher() {
 
   return (
     <>
-      {/* Floating trigger. Bottom right, clear of the rail and the app bar. */}
-      {!open && (
+      {/* Floating trigger, off unless asked for. Bottom right, clear of the
+          rail and the app bar. */}
+      {pinned && !open && (
         <Box
           sx={{
             position: 'fixed',
@@ -240,6 +253,25 @@ export function ScenarioSwitcher() {
           >
             Back to the opening position
           </Button>
+          <Stack
+            direction="row"
+            sx={{ gap: 1.5, alignItems: 'center', justifyContent: 'space-between' }}
+          >
+            <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
+              Show the Scenarios button on screen. Off by default, so it stays out of screenshots.
+            </Typography>
+            {/* A button rather than a switch: Atoms' Switch omits inputProps,
+                so it cannot be given a name, and this one names itself. */}
+            <Button
+              variant="secondary"
+              appearance="outline"
+              size="sm"
+              onClick={() => setPinned(!pinned)}
+              sx={{ flexShrink: 0, whiteSpace: 'nowrap' }}
+            >
+              {pinned ? 'Hide it' : 'Show it'}
+            </Button>
+          </Stack>
           <Typography variant="caption" color="text.secondary">
             Press S to open this from anywhere. Reloading the page does the same as the opening
             position.
