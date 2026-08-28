@@ -80,6 +80,18 @@ export function InvoiceDetailScreen() {
   const [poOpen, setPoOpen] = React.useState(false);
   const [poDraft, setPoDraft] = React.useState('');
   /**
+   * The picker behind "Upload the GRN" and "Upload the PO". A reference
+   * document is one file with a kind the user already named by pressing the
+   * button, so it goes straight to the OS picker rather than through the
+   * upload dialog, which exists to sort a mixed pile.
+   */
+  const referenceInput = React.useRef<HTMLInputElement | null>(null);
+  const [referenceKind, setReferenceKind] = React.useState<'po' | 'grn'>('grn');
+  const pickReference = (which: 'po' | 'grn') => {
+    setReferenceKind(which);
+    referenceInput.current?.click();
+  };
+  /**
    * An earlier stage the reader has gone back to. Null means the record's own
    * stage, which is the normal case; it clears whenever the record moves so a
    * reader is never left looking at the past after something happened.
@@ -181,8 +193,13 @@ export function InvoiceDetailScreen() {
     };
   })();
 
+  /**
+   * A dry run is a question put to the ERP. With no ERP connected there is
+   * nobody to ask, and the matched data leaves as a file instead — so the
+   * button is absent rather than present and inert.
+   */
   const secondary =
-    stage === 'posting'
+    stage === 'posting' && connections.zohoBooks && !invoice.isSample
       ? { label: 'Simulate', disabled: readOnly, onClick: () => simulatePosting(invoice.id) }
       : undefined;
 
@@ -259,22 +276,34 @@ export function InvoiceDetailScreen() {
                           appearance="outline"
                           size="sm"
                           startIcon={<UploadSimpleIcon size={16} />}
-                          onClick={() => attachReference(invoice.id, 'grn')}
+                          onClick={() => pickReference('grn')}
                           sx={{ whiteSpace: 'nowrap' }}
                         >
                           Upload the GRN
                         </Button>
                       )}
                       {block === 'no-po' && (
-                        <Button
-                          variant="secondary"
-                          appearance="outline"
-                          size="sm"
-                          onClick={() => setPoOpen(true)}
-                          sx={{ whiteSpace: 'nowrap' }}
-                        >
-                          Type a PO number
-                        </Button>
+                        <>
+                          <Button
+                            variant="secondary"
+                            appearance="outline"
+                            size="sm"
+                            startIcon={<UploadSimpleIcon size={16} />}
+                            onClick={() => pickReference('po')}
+                            sx={{ whiteSpace: 'nowrap' }}
+                          >
+                            Upload the PO
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            appearance="text"
+                            size="sm"
+                            onClick={() => setPoOpen(true)}
+                            sx={{ whiteSpace: 'nowrap' }}
+                          >
+                            Type a PO number
+                          </Button>
+                        </>
                       )}
                     </Stack>
                   ) : undefined
@@ -435,6 +464,22 @@ export function InvoiceDetailScreen() {
           )}
         </Stack>
       </Stack>
+
+      {/* The one file behind the two Upload buttons. Kept out of the alert so
+          it survives the alert closing when the block clears. */}
+      <Box
+        component="input"
+        ref={referenceInput}
+        type="file"
+        accept=".pdf,.jpg,.jpeg,.png"
+        sx={{ display: 'none' }}
+        onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+          const file = event.target.files?.[0];
+          if (file) attachReference(invoice.id, referenceKind, file.name);
+          // Let the same file be chosen again after a mistake.
+          event.target.value = '';
+        }}
+      />
 
       {/* Override with a written reason */}
       <Dialog open={overrideTarget !== null} onClose={() => setOverrideTarget(null)} fullWidth maxWidth="sm">

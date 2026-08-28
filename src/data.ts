@@ -534,7 +534,7 @@ function received(
  * A line that names no receipts arrived in one, on the receipt raised against
  * its own purchase order.
  */
-function grnLinesFor(lines: MatchLine[], poNumber: string | null): GrnLine[] {
+export function grnLinesFor(lines: MatchLine[], poNumber: string | null): GrnLine[] {
   const fallbackGrn = poNumber ? `GRN-${poNumber.replace(/\D/g, '').slice(-5)}` : 'GRN-—';
   return lines
     .filter((l) => l.grnQty !== null)

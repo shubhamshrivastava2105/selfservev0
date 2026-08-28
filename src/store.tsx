@@ -25,6 +25,7 @@ import {
   buildSamples,
   buildUpload,
   buildUploadedDocument,
+  grnLinesFor,
   readDomain,
 } from './data';
 import { load as loadPersisted, save as savePersisted } from './persist';
@@ -210,7 +211,12 @@ interface Store {
   postInvoice: (id: string) => void;
   markExported: (ids: string[]) => void;
   setPoNumber: (id: string, poNumber: string) => void;
-  attachReference: (id: string, which: 'po' | 'grn') => void;
+  /**
+   * Attach a purchase order or a goods receipt the user picked off their own
+   * machine. The file name is the one they chose, so the audit and the
+   * document strip name the document that actually arrived.
+   */
+  attachReference: (id: string, which: 'po' | 'grn', fileName?: string) => void;
   /**
    * Attach a document that arrived without an invoice. It is consumed off the
    * source it was held on, so it cannot be attached twice.
@@ -844,11 +850,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   /** Attaching a missing PO or GRN, then re-running the stage. */
   const attachReference = React.useCallback<Store['attachReference']>(
-    (id, which) => {
+    (id, which, fileName) => {
       patch(id, (invoice) => {
+        /** The document itself, kept beside the invoice it was attached to. */
+        const filed = (kind: 'Purchase order' | 'Goods receipt') =>
+          fileName && !invoice.attachments.some((a) => a.name === fileName)
+            ? [...invoice.attachments, { name: fileName, kind }]
+            : invoice.attachments;
+        const from = fileName ?? 'Uploaded document';
+
         if (which === 'grn') {
+          // What arrived, as its own rows. The receipt is a third document
+          // rather than a second opinion on the order, so the quantities on
+          // the comparison have to come off it — deriving the lines here is
+          // what makes the receipt panel show the delivery that was just
+          // attached rather than staying empty beside a cleared block.
+          const lines = invoice.lines.map((l) => ({ ...l, grnQty: l.poQty }));
           return {
             ...invoice,
+            attachments: filed('Goods receipt'),
             grnSource: 'uploaded',
             grnFields: [
               { key: 'grnNumber', label: 'GRN number', value: `GRN-US-${invoice.number.replace(/\D/g, '').slice(-5)}`, confidence: 93, mandatory: true, learnable: false },
@@ -856,12 +876,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
               { key: 'grnDate', label: 'Receipt date', value: formatDate(at(2)), confidence: 91, mandatory: true, learnable: false },
             ],
             // The receipt matches what was ordered.
-            lines: invoice.lines.map((l) => ({ ...l, grnQty: l.poQty })),
-            audit: appendAudit(invoice, 'GRN attached', 'Uploaded document, extracted with confidence per field'),
+            lines,
+            grnLines: grnLinesFor(lines, invoice.poNumber),
+            audit: appendAudit(invoice, 'GRN attached', `${from}, extracted with confidence per field`),
           };
         }
         return {
           ...invoice,
+          attachments: filed('Purchase order'),
           poSource: 'uploaded',
           poFields: [
             { key: 'poNumber', label: 'PO number', value: invoice.poNumber ?? 'PO-US-00000', confidence: 94, mandatory: true, learnable: false },
@@ -869,7 +891,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             { key: 'poCurrency', label: 'Currency', value: invoice.currency, confidence: 97, mandatory: true, learnable: false },
             { key: 'poTotal', label: 'PO total', value: invoice.amount.toFixed(2), confidence: 88, mandatory: true, learnable: false },
           ],
-          audit: appendAudit(invoice, 'PO attached', 'Uploaded document, extracted with confidence per field'),
+          audit: appendAudit(invoice, 'PO attached', `${from}, extracted with confidence per field`),
         };
       });
       rerunMatching(id);

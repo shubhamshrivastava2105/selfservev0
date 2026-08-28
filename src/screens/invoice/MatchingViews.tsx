@@ -212,39 +212,137 @@ function amountGap(value: number, currency: string): string {
 
 /* ── Invoice details: the field-by-field comparison ───────────────────── */
 
+/**
+ * One field across the documents that carry it.
+ *
+ * `null` means this document does not carry the field at all, which is a
+ * different fact from carrying it and disagreeing — a goods receipt has no
+ * vendor tax ID, and printing a blank there would read as a mismatch.
+ */
+interface CompareRow {
+  key: string;
+  label: string;
+  mandatory: boolean;
+  invoice: string | null;
+  po: string | null;
+  grn: string | null;
+}
+
+const grnValue = (invoice: Invoice, key: string) =>
+  invoice.grnFields.find((f) => f.key === key)?.value ?? null;
+
+/**
+ * The rows of the comparison, and which documents are in it.
+ *
+ * A goods receipt is a third document, not a second opinion on the purchase
+ * order: it is what actually arrived, so once one exists the quantities and
+ * the receipt's own references are read from it rather than from the order.
+ * The header fields it carries are few — its number, the order it cites and
+ * the date it was booked — and the rest of what it settles is per line, which
+ * is the other tab.
+ */
+export function comparisonRows(invoice: Invoice): CompareRow[] {
+  const rows: CompareRow[] = invoice.invoiceFields.map((f) => ({
+    key: f.key,
+    label: f.label,
+    mandatory: f.mandatory,
+    invoice: f.value,
+    po: f.poValue ?? f.value,
+    // The one header field all three documents name.
+    grn: f.key === 'po' ? grnValue(invoice, 'grnPoRef') : null,
+  }));
+
+  // The receipt's own fields, which neither of the other two carries.
+  const grnNumber = grnValue(invoice, 'grnNumber');
+  if (grnNumber !== null) {
+    rows.push({
+      key: 'grnNumber',
+      label: 'GRN Number',
+      mandatory: false,
+      invoice: null,
+      po: null,
+      grn: grnNumber,
+    });
+  }
+  const receiptDate = grnValue(invoice, 'grnDate');
+  if (receiptDate !== null) {
+    rows.push({
+      key: 'grnDate',
+      label: 'Receipt Date',
+      mandatory: false,
+      invoice: null,
+      po: null,
+      grn: receiptDate,
+    });
+  }
+  return rows;
+}
+
+/** Whether the documents that carry this field disagree about it. */
+export function rowDiffers(row: CompareRow): boolean {
+  const stated = [row.invoice, row.po, row.grn].filter((v): v is string => v !== null);
+  return new Set(stated).size > 1;
+}
+
+/** A document that does not carry the field, said as absence rather than blank. */
+function NotCarried() {
+  return (
+    <Box component="span" sx={{ color: 'text.disabled' }} aria-label="Not on this document">
+      —
+    </Box>
+  );
+}
+
 export function InvoiceDetailsTable({ invoice }: { invoice: Invoice }) {
+  const rows = comparisonRows(invoice);
+  // A receipt earns a column once there is one. Before that the comparison is
+  // two documents and a third empty column would be a promise, not a fact.
+  const hasGrn = invoice.grnSource !== 'none' && invoice.grnFields.length > 0;
+
   return (
     <TableContainer sx={{ height: '100%', overflow: 'auto' }}>
-      <Table size="md" sx={{ minWidth: 720 }}>
+      <Table size="md" sx={{ minWidth: hasGrn ? 900 : 720 }}>
         <TableHead>
           <TableRow>
             <TableCell sx={{ ...LABEL_CELL, width: DETAILS_COLS.field }}>Field</TableCell>
             <TableCell sx={{ ...LABEL_CELL, width: DETAILS_COLS.invoice }}>Invoice</TableCell>
             <TableCell sx={LABEL_CELL}>PO</TableCell>
+            {hasGrn && <TableCell sx={LABEL_CELL}>GRN</TableCell>}
           </TableRow>
         </TableHead>
         <TableBody>
-          {invoice.invoiceFields.map((f) => {
-            const poValue = f.poValue ?? f.value;
-            const differs = poValue !== f.value;
+          {rows.map((row) => {
+            const differs = rowDiffers(row);
             return (
-              // A fill means the row wants something. Eleven green rows would
+              // A fill means the row wants something. Twelve green rows would
               // make the one that disagrees harder to find, not easier.
-              <TableRow key={f.key} state={differs ? 'error' : undefined}>
-                {/* The name of the row rather than one of its two values. */}
+              <TableRow key={row.key} state={differs ? 'error' : undefined}>
+                {/* The name of the row rather than one of its values. */}
                 <TableCell component="th" scope="row" sx={LABEL_CELL}>
-                  {f.label}
-                  {f.mandatory && <Required />}
+                  {row.label}
+                  {row.mandatory && <Required />}
                 </TableCell>
-                <TableCell sx={TRUNCATE}>{f.value}</TableCell>
+                <TableCell sx={TRUNCATE}>
+                  {row.invoice ?? <NotCarried />}
+                </TableCell>
                 <TableCell>
                   <Stack direction="row" sx={{ gap: 1.5, alignItems: 'center', minWidth: 0 }}>
                     <Box component="span" sx={TRUNCATE}>
-                      {poValue}
+                      {row.po ?? <NotCarried />}
                     </Box>
-                    {differs && <Chip size="sm" variant="error" label="differs" />}
+                    {differs && !hasGrn && <Chip size="sm" variant="error" label="differs" />}
                   </Stack>
                 </TableCell>
+                {hasGrn && (
+                  <TableCell>
+                    <Stack direction="row" sx={{ gap: 1.5, alignItems: 'center', minWidth: 0 }}>
+                      <Box component="span" sx={TRUNCATE}>
+                        {row.grn ?? <NotCarried />}
+                      </Box>
+                      {differs && <Chip size="sm" variant="error" label="differs" />}
+                    </Stack>
+                  </TableCell>
+                )}
               </TableRow>
             );
           })}
@@ -768,7 +866,7 @@ export function LineItemComparison({ invoice }: { invoice: Invoice }) {
 /** The matching stage's views. */
 export function MatchingViews({ invoice }: { invoice: Invoice }) {
   const [tab, setTab] = React.useState<'details' | 'lines'>('details');
-  const differing = invoice.invoiceFields.filter((f) => (f.poValue ?? f.value) !== f.value).length;
+  const differing = comparisonRows(invoice).filter(rowDiffers).length;
 
   return (
     <Stack sx={{ flex: 1, minHeight: 0 }}>

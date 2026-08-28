@@ -271,7 +271,10 @@ export interface Invoice {
    * documents including Faktur Pajak, delivery notes, approval mail. Stored and
    * carried to posting, never validated (Workflow PRD §3, §14).
    */
-  attachments: { name: string; kind: 'Tax document' | 'Supporting document' }[];
+  attachments: {
+    name: string;
+    kind: 'Tax document' | 'Supporting document' | 'Purchase order' | 'Goods receipt';
+  }[];
 
   /**
    * The frozen result of the last matching run. Nothing is re-evaluated
