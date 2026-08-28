@@ -94,8 +94,18 @@ const delta = (now: number, prior: number): Delta => ({
   changePercent: prior === 0 ? null : Number((((now - prior) / prior) * 100).toFixed(1)),
 });
 
+/**
+ * Invoices that finished in the window.
+ *
+ * Posted and Exported are one outcome counted twice otherwise. Both are the
+ * invoice leaving Neoflo with its data settled; which of the two it is depends
+ * on whether an ERP is connected, and a workspace without one would otherwise
+ * report that it had processed nothing.
+ */
 export const postedIn = (invoices: Invoice[], from: number, to: number): Invoice[] =>
-  reportable(invoices).filter((i) => i.status === 'Posted' && inside(i.terminalAt, from, to));
+  reportable(invoices).filter(
+    (i) => ['Posted', 'Exported'].includes(i.status) && inside(i.terminalAt, from, to),
+  );
 
 export const createdIn = (invoices: Invoice[], from: number, to: number): Invoice[] =>
   reportable(invoices).filter((i) => inside(i.ingestedAt, from, to));
@@ -158,7 +168,7 @@ export const FUNNEL_STAGES: { key: string; label: string }[] = [
   { key: 'extraction', label: 'Extraction' },
   { key: 'matching', label: 'Matching' },
   { key: 'posting', label: 'ERP posting' },
-  { key: 'posted', label: 'Posted' },
+  { key: 'posted', label: 'Finished' },
 ];
 
 /**
@@ -178,7 +188,7 @@ export function funnel(invoices: Invoice[], w: Window) {
     { label: 'Matching', count: created.filter((i) => reached(i, 'matching')).length },
     { label: 'ERP posting', count: created.filter((i) => reached(i, 'posting')).length },
     {
-      label: 'Posted',
+      label: 'Finished',
       count: created.filter((i) => ['Posted', 'Exported'].includes(i.status)).length,
     },
   ];
@@ -402,7 +412,11 @@ export function perAgent(invoices: Invoice[], members: Member[], w: Window, base
   const byActor = new Map<string, number[]>();
   for (const invoice of postedIn(invoices, w.from, w.to)) {
     if (invoice.stpPosted) continue;
-    const entry = [...invoice.audit].reverse().find((a) => a.action === 'Posted to Zoho Books');
+    // Whichever way the invoice left, the person who sent it is the one the
+    // time is credited to.
+    const entry = [...invoice.audit]
+      .reverse()
+      .find((a) => a.action === 'Posted to Zoho Books' || a.action === 'Exported');
     if (!entry) continue;
     const start = at(invoice.firstSurfacedAt);
     const end = at(invoice.terminalAt);

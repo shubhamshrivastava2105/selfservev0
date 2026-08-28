@@ -133,7 +133,18 @@ const BAND_LABEL = { fast: 'Fast', fair: 'Within SLA', slow: 'Over SLA' } as con
 const BAND_TONE = { fast: 'success', fair: 'warning', slow: 'error' } as const;
 
 export function ReportingScreen() {
-  const { invoices, members, config, profile } = useStore();
+  const { invoices, members, config, profile, connections } = useStore();
+  /**
+   * What finishing is called here.
+   *
+   * The measurement is the same either way — the invoice left Neoflo with its
+   * data settled. Only the destination differs, and a workspace with no ERP
+   * reporting on how many invoices it "posted" is reporting on something it
+   * cannot do.
+   */
+  const posts = connections.zohoBooks;
+  const outcome = posts ? 'posted' : 'completed';
+  const outcomeTitle = posts ? 'Posted' : 'Completed';
   const [range, setRange] = React.useState<RangeKey>('7d');
   const r = React.useMemo(
     () => report(invoices, members, config, range),
@@ -170,7 +181,7 @@ export function ReportingScreen() {
             <Typography variant="body2" color="text.secondary">
               {profile.workspaceName || 'This workspace'}, last {r.window.days === 1 ? 'day' : `${r.window.days} days`}
               {sampleCount > 0 &&
-                `. ${sampleCount} sample record${sampleCount === 1 ? '' : 's'} left out — they never posted anywhere`}
+                `. ${sampleCount} sample record${sampleCount === 1 ? '' : 's'} left out — they never went anywhere`}
               .
             </Typography>
           </Stack>
@@ -184,8 +195,8 @@ export function ReportingScreen() {
             <Grid container spacing={2}>
               <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
                 <StatTile
-                  label="Invoices posted"
-                  hint="Reached a posted state inside this window."
+                  label={`Invoices ${outcome}`}
+                  hint={`Left Neoflo ${posts ? 'for the ERP' : 'as matched data'} inside this window.`}
                   value={r.volume.posted.now.toLocaleString('en-US')}
                   delta={{ changePercent: r.volume.posted.changePercent, better: 'up' }}
                 />
@@ -239,8 +250,8 @@ export function ReportingScreen() {
             <Grid container spacing={2}>
               <Grid size={{ xs: 12, lg: 7 }}>
                 <SectionCard
-                  title="Arrived and posted, by day"
-                  description={`Posting is the line that matters; arrivals are the demand behind it. The dashed line is the daily share of a ${config.monthlyPostingTarget}-a-month target.`}
+                  title={`Arrived and ${outcome}, by day`}
+                  description={`${outcomeTitle} is the line that matters; arrivals are the demand behind it. The dashed line is the daily share of a ${config.monthlyPostingTarget}-a-month target.`}
                 >
                   <LineChart
                     labels={r.daily.map((d) => d.label)}
@@ -251,7 +262,7 @@ export function ReportingScreen() {
                     series={[
                       {
                         key: 'posted',
-                        label: 'Posted',
+                        label: outcomeTitle,
                         role: 'accent',
                         points: r.daily.map((d) => d.posted),
                         format: (v) => String(Math.round(v)),
@@ -264,13 +275,13 @@ export function ReportingScreen() {
                         format: (v) => String(Math.round(v)),
                       },
                     ]}
-                    emptyMessage="Nothing arrived or posted in this window."
+                    emptyMessage={`Nothing arrived or ${outcome} in this window.`}
                   />
                 </SectionCard>
               </Grid>
               <Grid size={{ xs: 12, lg: 5 }}>
                 <SectionCard
-                  title="Posted by legal entity"
+                  title={`${outcomeTitle} by legal entity`}
                   description="Which set of books the work landed in."
                 >
                   <ShareBar
@@ -279,7 +290,7 @@ export function ReportingScreen() {
                       count: e.count,
                       percent: e.percent,
                     }))}
-                    emptyMessage="Nothing posted in this window."
+                    emptyMessage={`Nothing ${outcome} in this window.`}
                   />
                 </SectionCard>
               </Grid>
@@ -301,7 +312,7 @@ export function ReportingScreen() {
               <Grid size={{ xs: 12, lg: 5 }}>
                 <SectionCard
                   title="Where they stopped"
-                  description="What is holding back anything that arrived and has not posted."
+                  description={`What is holding back anything that arrived and has not ${outcome}.`}
                 >
                   <BarList
                     data={r.dropOff.map((d) => ({ label: d.reason, value: d.count }))}
@@ -390,8 +401,9 @@ export function ReportingScreen() {
                       caption={`${r.fullAuto.eligible} of ${r.fullAuto.total} closed invoice${r.fullAuto.total === 1 ? '' : 's'}`}
                     />
                     <Typography variant="body2" color="text.secondary">
-                      {r.fullAuto.unsupervised} actually posted without surfacing, which is what
-                      straight-through is doing today.
+                      {posts
+                        ? `${r.fullAuto.unsupervised} actually posted without surfacing, which is what straight-through is doing today.`
+                        : 'None of them went anywhere unsupervised: straight-through needs an ERP to post to, and none is connected.'}
                     </Typography>
                   </Stack>
                 </SectionCard>
@@ -488,7 +500,7 @@ export function ReportingScreen() {
               </Grid>
               <Grid size={{ xs: 12, lg: 5 }}>
                 <SectionCard
-                  title="Posted per person"
+                  title={`${outcomeTitle} per person`}
                   description="Who closed the work, and where their median sits against the baseline."
                 >
                   <BarList

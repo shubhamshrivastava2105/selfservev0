@@ -250,12 +250,16 @@ export const DEFAULT_CONFIG: WorkflowConfig = {
 };
 
 /**
- * Zoho Books connected, Inventory not — which is the dependency Journey §8.2
- * calls out: receipts live in Inventory, so 3-way only works from uploaded
- * GRN documents until Inventory is connected too.
+ * Nothing connected but the mailbox.
+ *
+ * An integration is something a person did, so a workspace nobody has
+ * configured has none. Neoflo still earns its keep on day one: it reads the
+ * invoice, matches it against an uploaded purchase order and receipt, and
+ * hands the matched data back as a CSV. Posting is what connecting an ERP
+ * buys, and until then the product does not claim to have one.
  */
 export const DEFAULT_CONNECTIONS: Connections = {
-  zohoBooks: true,
+  zohoBooks: false,
   zohoInventory: false,
   mailboxProvider: 'gmail',
   mailboxAddress: 'ap@neoflo.ai',
@@ -666,13 +670,13 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     }),
     poFields: poFields(
       { number: 'PO-US-90551', vendor: 'Redwood Office Supply', currency: 'USD', total: '6,120.00' },
-      'zoho',
+      'uploaded',
     ),
     grnFields: grnFields(
       { number: 'GRN-US-90551', poRef: 'PO-US-90551', receiptDate: formatDate(at(1, 14, 0)) },
       'uploaded',
     ),
-    poSource: 'zoho',
+    poSource: 'uploaded',
     grnSource: 'uploaded',
     lines: [
       line('l1', 'Desk risers — adjustable', 24, 24, 24, 185.0, '6200 · Office supplies'),
@@ -720,13 +724,13 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     }),
     poFields: poFields(
       { number: 'PO-US-90448', vendor: 'Bayline Freight', currency: 'USD', total: '3,480.00' },
-      'zoho',
+      'uploaded',
     ),
     grnFields: grnFields(
       { number: 'GRN-US-90448', poRef: 'PO-US-90448', receiptDate: formatDate(at(2, 9, 15)) },
       'uploaded',
     ),
-    poSource: 'zoho',
+    poSource: 'uploaded',
     grnSource: 'uploaded',
     lines: [line('l1', 'Air freight — express', 1, 1, 1, 3480.0, '7100 · Freight and delivery')],
     attachments: [],
@@ -794,10 +798,10 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     ),
     poFields: poFields(
       { number: 'PO-US-77004', vendor: 'Sierra Networks', currency: 'USD', total: '3,940.24' },
-      'zoho',
+      'uploaded',
     ),
     grnFields: [],
-    poSource: 'zoho',
+    poSource: 'uploaded',
     grnSource: 'none',
     /**
      * Six lines rather than two. An extraction screen with a two-row table does
@@ -879,14 +883,14 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     ),
     poFields: poFields(
       { number: 'PO-US-77655', vendor: 'Sierra Networks', currency: 'USD', total: '13,250.32' },
-      'zoho',
+      'uploaded',
     ),
     grnFields: grnFields(
       { number: 'GRN-4471', poRef: 'PO-US-77655', receiptDate: formatDate(at(6)) },
-      'zoho',
+      'uploaded',
     ),
-    poSource: 'zoho',
-    grnSource: 'zoho',
+    poSource: 'uploaded',
+    grnSource: 'uploaded',
     lines: [
       // Switches came in three drops, the last one against a second order.
       received(line('l1', 'Network switch — 48 port PoE+', 12, 12, 12, 720.0, '6400 · IT and software'), [
@@ -967,10 +971,10 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     }),
     poFields: poFields(
       { number: 'PO-US-88213', vendor: 'Puget Logistics', currency: 'USD', total: '7,215.60' },
-      'zoho',
+      'uploaded',
     ),
     grnFields: [],
-    poSource: 'zoho',
+    poSource: 'uploaded',
     grnSource: 'none',
     lines: [
       line('l1', 'Freight — inbound, August', 1, 1, null, 5400.0, '7100 · Freight and delivery'),
@@ -1027,13 +1031,13 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     }),
     poFields: poFields(
       { number: 'PO-US-44320', vendor: 'Cascade Industrial Parts', currency: 'USD', total: '25,000.00' },
-      'zoho',
+      'uploaded',
     ),
     grnFields: grnFields(
       { number: 'GRN-US-44320', poRef: 'PO-US-44320', receiptDate: formatDate(at(8)) },
       'uploaded',
     ),
-    poSource: 'zoho',
+    poSource: 'uploaded',
     grnSource: 'uploaded',
     lines: [line('l1', 'Conveyor belting — 600mm', 300, 300, 300, 73.0, '6500 · Repairs and maintenance', 'US-CA-SALES-7.25')],
     attachments: [{ name: 'approval-email-44320.eml', kind: 'Supporting document' }],
@@ -1117,14 +1121,14 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
         currency: 'USD',
         total: '16,453.22',
       },
-      'zoho',
+      'uploaded',
     ),
     grnFields: grnFields(
       { number: 'GRN-51288', poRef: 'PO-US-51288', receiptDate: formatDate(at(5)) },
-      'zoho',
+      'uploaded',
     ),
-    poSource: 'zoho',
-    grnSource: 'zoho',
+    poSource: 'uploaded',
+    grnSource: 'uploaded',
     lines: [
       line('l1', 'Steel toe boots — size 10', 24, 24, 24, 118.5, '6300 · Safety and workwear', SALES_TAX_CA),
       line('l2', 'Reflective safety vest — class 2', 60, 60, 60, 21.75, '6300 · Safety and workwear', SALES_TAX_CA),
@@ -1165,7 +1169,11 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     terminalAt: null,
   },
 
-  /* Clean, ERP connected, nothing flagged — posted on its own and never surfaced. */
+  /*
+   * Clean, nothing flagged, never opened by anybody. With no ERP connected it
+   * still needed a person to take the file, so it is not straight-through —
+   * that is what connecting an ERP would buy, and the workspace has not.
+   */
   {
     id: 'inv-66004',
     number: 'INV-66004',
@@ -1178,9 +1186,9 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     source: 'Mailbox',
     sourceId: 'src-mail-1',
     isSample: false,
-    stpPosted: true,
+    stpPosted: false,
     stage: 'posting',
-    status: 'Posted',
+    status: 'Exported',
     invoiceFields: invoiceFields({
       number: 'INV-66004',
       date: formatDate(at(8)),
@@ -1194,13 +1202,13 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     }),
     poFields: poFields(
       { number: 'PO-US-66004', vendor: 'Redwood Office Supply', currency: 'USD', total: '2,180.00' },
-      'zoho',
+      'uploaded',
     ),
     grnFields: grnFields(
       { number: 'GRN-US-66004', poRef: 'PO-US-66004', receiptDate: formatDate(at(9)) },
       'uploaded',
     ),
-    poSource: 'zoho',
+    poSource: 'uploaded',
     grnSource: 'uploaded',
     lines: [line('l1', 'Filing cabinets — 4 drawer', 4, 4, 4, 545.0, '6200 · Office supplies')],
     attachments: [],
@@ -1217,12 +1225,11 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
       audit(at(8, 7, 1), 'Ingested', 'Mailbox · Invoices/Inbound'),
       audit(at(8, 7, 2), 'Extraction complete', 'Every field cleared its threshold'),
       audit(at(8, 7, 2), 'Matching run', 'All three checks passed'),
-      audit(at(8, 7, 2), 'Posted by straight-through processing', 'Never surfaced to a user. Zoho Books ZB-BILL-10442'),
+      audit(at(8, 7, 3), 'Exported', 'Matched-data CSV downloaded.', 'Vibhor Sharma'),
     ],
-    erpReference: 'ZB-BILL-10442',
     ingestedAt: at(8, 7, 1),
-    firstSurfacedAt: null,
-    terminalAt: at(8, 7, 2),
+    firstSurfacedAt: at(8, 7, 2),
+    terminalAt: at(8, 7, 3),
   },
 
   /* Surfaced, worked by a person, posted. Gives touch time something to measure. */
@@ -1240,7 +1247,7 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     isSample: false,
     stpPosted: false,
     stage: 'posting',
-    status: 'Posted',
+    status: 'Exported',
     invoiceFields: invoiceFields({
       number: 'INV-33128',
       date: formatDate(at(6)),
@@ -1254,13 +1261,13 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     }),
     poFields: poFields(
       { number: 'PO-US-33128', vendor: 'Redwood Office Supply', currency: 'USD', total: '9,340.00' },
-      'zoho',
+      'uploaded',
     ),
     grnFields: grnFields(
       { number: 'GRN-US-33128', poRef: 'PO-US-33128', receiptDate: formatDate(at(7)) },
       'uploaded',
     ),
-    poSource: 'zoho',
+    poSource: 'uploaded',
     grnSource: 'uploaded',
     lines: [
       line('l1', 'Printer paper — A4 80gsm', 100, 100, 100, 58.0, '6200 · Office supplies'),
@@ -1288,9 +1295,8 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
       audit(at(6, 10, 25), 'Extraction complete'),
       audit(at(6, 10, 26), 'Matching run', 'Line item failed on quantity'),
       audit(at(6, 10, 31), 'Override recorded', 'Line item — quantity. Reason given.', 'Kaustav Dutta'),
-      audit(at(6, 10, 33), 'Posted to Zoho Books', 'ZB-BILL-10488', 'Kaustav Dutta'),
+      audit(at(6, 10, 33), 'Exported', 'Matched-data CSV downloaded.', 'Kaustav Dutta'),
     ],
-    erpReference: 'ZB-BILL-10488',
     ingestedAt: at(6, 10, 24),
     firstSurfacedAt: at(6, 10, 26),
     terminalAt: at(6, 10, 33),
@@ -1385,10 +1391,10 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     }),
     poFields: poFields(
       { number: 'PO-US-22016', vendor: 'Harbor Print Co', currency: 'USD', total: '1,120.00' },
-      'zoho',
+      'uploaded',
     ),
     grnFields: [],
-    poSource: 'zoho',
+    poSource: 'uploaded',
     grnSource: 'none',
     lines: [line('l1', 'Brochures — A5 gloss, 5000', 5000, 5000, null, 0.224, '7400 · Printing and marketing', 'US-CA-SALES-7.25')],
     attachments: [],

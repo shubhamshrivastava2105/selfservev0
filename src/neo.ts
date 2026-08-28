@@ -585,6 +585,21 @@ export function answerQuestion(
   }
 
   if (/posted|paid|zoho|erp/.test(q)) {
+    // Asked about posting in a workspace with nowhere to post. The honest
+    // answer names the reason and then answers the question underneath it,
+    // which is how much work has actually finished.
+    if (!ctx.connections.zohoBooks) {
+      const total = exported.reduce((sum, i) => sum + i.amount, 0);
+      return {
+        text:
+          exported.length === 0
+            ? 'No ERP is connected, so nothing posts from here. Matched invoices leave as a CSV from the ERP posting stage, and none have yet.'
+            : `No ERP is connected, so nothing posts from here. ${exported.length} invoice${
+                exported.length === 1 ? ' has' : 's have'
+              } left as matched-data CSV, totaling ${money(total)}. Connect Zoho Books in Workspace and Neoflo writes the bill itself.`,
+        citations: exported.map(cite),
+      };
+    }
     if (posted.length === 0) return { text: 'Nothing has posted to Zoho from this workspace yet.' };
     const total = posted.reduce((sum, i) => sum + i.amount, 0);
     const stp = posted.filter((i) => i.stpPosted);

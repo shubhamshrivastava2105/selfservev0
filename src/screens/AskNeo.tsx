@@ -207,7 +207,11 @@ function BriefingMessage() {
  * strike through work somebody else did.
  */
 function FirstStepsMessage() {
-  const { firstRun, invoices, goTo, openInvoice } = useStore();
+  const { firstRun, invoices, connections, goTo, openInvoice } = useStore();
+  // Where an invoice goes when it is done, which is not the same product for
+  // a workspace with an ERP and one without. Naming the wrong one is a step
+  // the user cannot complete.
+  const posts = connections.zohoBooks;
 
   /** The invoice this step is about, so a click lands on the work itself. */
   const needsReview = invoices.find((i) => i.status === 'Action Required') ?? invoices[0];
@@ -232,10 +236,14 @@ function FirstStepsMessage() {
     },
     {
       key: 'posted' as const,
-      label: 'Post it to your books',
-      detail: 'Simulate first, then post. Or download it if no ERP is connected.',
+      label: posts ? 'Post it to your books' : 'Take the matched data',
+      detail: posts
+        ? 'Simulate first, then post.'
+        : 'Download it as a CSV. Connect an ERP later and Neoflo writes the bill itself.',
       done: firstRun.posted,
-      action: readyToPost ? `Post ${readyToPost.number}` : 'Open the queue',
+      action: readyToPost
+        ? `${posts ? 'Post' : 'Download'} ${readyToPost.number}`
+        : 'Open the queue',
       go: () => (readyToPost ? openInvoice(readyToPost.id) : goTo('queue')),
     },
   ];
@@ -249,7 +257,7 @@ function FirstStepsMessage() {
     <NeoMessage>
       <Typography variant="body2">
         {doneCount === 0
-          ? 'Three steps to your first posted invoice. Each one takes you where it happens.'
+          ? `Three steps to your first ${posts ? 'posted' : 'finished'} invoice. Each one takes you where it happens.`
           : `${doneCount} of ${steps.length} done. ${next?.label ?? ''} next.`}
       </Typography>
       <Stack
@@ -324,7 +332,9 @@ function FirstStepsMessage() {
         })}
       </Stack>
       <Typography variant="caption" color="text.secondary">
-        Nothing to configure first — matching, tolerances and your ERP connection are already set.
+        {posts
+          ? 'Nothing to configure first — matching, tolerances and your ERP connection are already set.'
+          : 'Nothing to configure first. Matching and tolerances are already set, and no ERP is needed to get the data out.'}
       </Typography>
     </NeoMessage>
   );
