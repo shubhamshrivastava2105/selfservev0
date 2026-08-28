@@ -241,7 +241,10 @@ interface Store {
 /** What the chart of accounts maps a line to, by what it is. */
 function glForLine(description: string): string {
   const d = description.toLowerCase();
+  if (/training|course|workshop/.test(d)) return '6600 · Training and development';
   if (/freight|delivery|shipping|ocean|fuel/.test(d)) return '7100 · Freight and delivery';
+  if (/boot|vest|muff|shield|glove|respirator|harness|coverall|first aid|eye wash|signage|safety/.test(d))
+    return '6300 · Safety and workwear';
   if (/switch|network|software|install|licence|license/.test(d)) return '6400 · IT and software';
   if (/bolt|bearing|gasket|belting|conveyor|repair/.test(d)) return '6500 · Repairs and maintenance';
   if (/brochure|print|label/.test(d)) return '7400 · Printing and marketing';
@@ -594,7 +597,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         amountBeforeVat: Number(beforeVat.toFixed(2)),
         totalAfterVat: invoice.amount,
         referenceNumber: `NL${invoice.number.replace(/\D/g, '').padStart(9, '0')}`,
-        variance: Number((invoice.amount - poTotal).toFixed(2)),
+        // Pre-tax on both sides, as data.ts derives it: the tax is not a
+        // variance, and comparing across it would report one on every
+        // invoice that carries tax.
+        variance: Number((beforeVat - poTotal).toFixed(2)),
       },
     };
   };

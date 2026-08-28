@@ -4,10 +4,12 @@ import {
   Box,
   Button,
   Chip,
+  DataGrid,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
   Grid,
   IconButton,
   Stack,
@@ -23,19 +25,67 @@ import {
 } from '@neofloai/atoms';
 import {
   CaretDownIcon,
-  CaretLeftIcon,
-  CaretRightIcon,
   FilePdfIcon,
   ScissorsIcon,
   UploadSimpleIcon,
 } from '@neofloai/atoms/icons';
+import { fontFamilies } from '@neofloai/atoms/tokens';
 import { VAT_CODES, WHT_CODES } from '../../data';
 import { CodePicker, ColumnCodePicker } from '../../components/CodePicker';
 import { Required } from '../../components/common';
 import { useStore } from '../../store';
 import { money } from '../../engine';
 import { formatDateTime } from '../../clock';
-import type { ErpPayload, Invoice } from '../../types';
+import type { ErpPayload, Invoice, MatchLine } from '../../types';
+
+/** Digits that line up down a column, and headers that read as a ledger's. */
+const MONO = { fontFamily: fontFamilies.product.mono } as const;
+
+/** Lines a page holds. Twelve lines is two pages, which is the point of one. */
+const PAGE_SIZE = 10;
+
+/** One row of the posting table: the line, plus its place in the document. */
+type PostingRow = MatchLine & { index: number };
+
+/**
+ * A money cell: the currency mark in caption ink, the digits in mono, both
+ * pushed right so the decimal points line up down the column. Lined-up
+ * decimals are the only reason a reader can compare two figures without
+ * reading either.
+ */
+function AmountCell({ value, currency }: { value: number; currency: string }) {
+  const parts = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 2,
+  }).formatToParts(value);
+  const mark = parts.find((part) => part.type === 'currency')?.value ?? '';
+  const digits = parts
+    .filter((part) => part.type !== 'currency')
+    .map((part) => part.value)
+    .join('')
+    .trim();
+
+  return (
+    <Box
+      component="span"
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'flex-end',
+        gap: '2px',
+        width: '100%',
+      }}
+    >
+      <Box component="span" sx={{ color: 'text.secondary' }}>
+        {mark}
+      </Box>
+      <Box component="span" sx={MONO}>
+        {digits}
+      </Box>
+    </Box>
+  );
+}
 
 /**
  * The payload as it will be written to the ERP: the header, the documents
@@ -52,7 +102,6 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
 
   // Opens itself when a run comes back, and is dismissable.
   const [showResult, setShowResult] = React.useState(false);
-  const [rowsPerPage, setRowsPerPage] = React.useState(10);
   const lastRun = React.useRef<string | null>(null);
   React.useEffect(() => {
     if (erp.simulated && erp.simulated.at !== lastRun.current) {
@@ -61,7 +110,7 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
     }
   }, [erp.simulated]);
 
-  const fixed = (label: string, value: string, required?: boolean) => (
+  const fixed = (label: string, value: string, required?: boolean, problem?: string) => (
     <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
       <TextField
         label={
@@ -72,6 +121,8 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
         }
         value={value}
         disabled
+        status={problem ? 'error' : undefined}
+        helperText={problem}
         fullWidth
       />
     </Grid>
@@ -100,10 +151,164 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
     </Grid>
   );
 
+  const rows: PostingRow[] = React.useMemo(
+    () => invoice.lines.map((l, index) => ({ ...l, index: index + 1 })),
+    [invoice.lines],
+  );
+
+  const columns = React.useMemo<React.ComponentProps<typeof DataGrid>['columns']>(
+    () => [
+      {
+        field: 'index',
+        headerName: '#',
+        width: 64,
+        sortable: false,
+        // The line's position rather than one of its fields. It exists so a
+        // finding can say "line 3" and be followed.
+        renderCell: ({ row }) => (
+          <Box component="span" sx={{ ...MONO, color: 'text.secondary' }}>
+            {(row as PostingRow).index}
+          </Box>
+        ),
+      },
+      { field: 'description', headerName: 'Description', flex: 1.6, minWidth: 180 },
+      {
+        field: 'invoiceLineTotal',
+        headerName: 'Line Total',
+        type: 'number',
+        width: 150,
+        align: 'right',
+        headerAlign: 'right',
+        renderCell: ({ row }) => (
+          <AmountCell value={(row as PostingRow).invoiceLineTotal} currency={invoice.currency} />
+        ),
+      },
+      {
+        field: 'vat',
+        headerName: 'VAT Tax Code',
+        width: 210,
+        sortable: false,
+        // The caret sets the code on every line at once. It earns its place on
+        // a twelve-line invoice, where most lines take the same code and
+        // setting it row by row is twelve decisions made the same way.
+        renderHeader: () => (
+          <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center', minWidth: 0 }}>
+            <Box component="span" sx={{ flex: 1 }}>
+              VAT Tax Code
+              <Required />
+            </Box>
+            <ColumnCodePicker
+              heading="VAT tax code"
+              options={VAT_CODES}
+              disabled={readOnly}
+              onPickAll={(value) =>
+                invoice.lines.forEach((l) => setLineCode(invoice.id, l.id, 'vat', value))
+              }
+            />
+          </Stack>
+        ),
+        renderCell: ({ row }) => (
+          <CodePicker
+            label="VAT tax code"
+            rowLabel={(row as PostingRow).description}
+            value={(row as PostingRow).vat}
+            options={VAT_CODES}
+            disabled={readOnly}
+            onPick={(value) => setLineCode(invoice.id, (row as PostingRow).id, 'vat', value)}
+            minWidth={160}
+          />
+        ),
+      },
+      {
+        field: 'wht',
+        headerName: 'WHT Tax Code',
+        width: 190,
+        sortable: false,
+        renderHeader: () => (
+          <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center', minWidth: 0 }}>
+            <Box component="span" sx={{ flex: 1 }}>
+              WHT Tax Code
+              <Required />
+            </Box>
+            <ColumnCodePicker
+              heading="WHT tax code"
+              options={WHT_CODES}
+              disabled={readOnly}
+              onPickAll={(value) =>
+                invoice.lines.forEach((l) => setLineCode(invoice.id, l.id, 'wht', value))
+              }
+            />
+          </Stack>
+        ),
+        renderCell: ({ row }) => (
+          <CodePicker
+            label="WHT tax code"
+            rowLabel={(row as PostingRow).description}
+            value={(row as PostingRow).wht}
+            options={WHT_CODES}
+            disabled={readOnly}
+            onPick={(value) => setLineCode(invoice.id, (row as PostingRow).id, 'wht', value)}
+            minWidth={140}
+          />
+        ),
+      },
+      {
+        // No header. The column holds one control and the control says what it
+        // does; a heading over it would name the column after the control.
+        field: 'actions',
+        headerName: '',
+        width: 72,
+        sortable: false,
+        align: 'center',
+        renderCell: ({ row }) => (
+          <Tooltip title="Split this line across two cost centres">
+            <Box component="span" sx={{ display: 'inline-flex' }}>
+              <IconButton
+                variant="secondary"
+                appearance="text"
+                size="sm"
+                aria-label={`Split ${(row as PostingRow).description}`}
+                disabled={readOnly}
+              >
+                <ScissorsIcon />
+              </IconButton>
+            </Box>
+          </Tooltip>
+        ),
+      },
+    ],
+    [invoice.currency, invoice.id, invoice.lines, readOnly, setLineCode],
+  );
+
+  const run = erp.simulated;
+
   return (
-    <>
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-        <Stack sx={{ px: 3, pt: 3, pb: 2, gap: 3 }}>
+    <Stack sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+      <Box sx={{ flexShrink: 0, overflowY: 'auto', maxHeight: '58%' }}>
+        <Stack sx={{ px: 3, pt: 3, pb: 2, gap: 2.5 }}>
+          {/* What the dry run said, kept on the screen after the dialog is
+              dismissed. Otherwise the only trace of a run is a button that
+              quietly started answering. */}
+          {run && (
+            <Alert
+              severity={run.ok ? 'success' : 'error'}
+              floating
+              action={
+                <Button
+                  variant="secondary"
+                  appearance="text"
+                  size="sm"
+                  onClick={() => setShowResult(true)}
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
+                  Details
+                </Button>
+              }
+            >
+              {run.message} Simulated {formatDateTime(run.at)}.
+            </Alert>
+          )}
+
           <Grid container spacing={2.5}>
             {fixed('PO Number', erp.poNumber || '—', true)}
             {fixed('Amount before VAT', money(erp.amountBeforeVat, invoice.currency), true)}
@@ -117,7 +322,15 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
 
             {editable('Doc Header', 'docHeader')}
             {editable('Ref Key 2', 'refKey2', 'Enter Ref Key 2')}
-            {fixed('Variance', money(erp.variance, invoice.currency))}
+            {/* Derived, so it is the one field with no entry in the payload.
+                Zero is the only acceptable value, which makes it a check
+                rather than a field. */}
+            {fixed(
+              'Variance',
+              money(erp.variance, invoice.currency),
+              false,
+              erp.variance === 0 ? undefined : 'The lines do not add up to the order',
+            )}
           </Grid>
 
           <Stack sx={{ gap: 1 }}>
@@ -174,175 +387,61 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
             </Stack>
           </Stack>
         </Stack>
+      </Box>
 
-        <TableContainer
-          sx={{
-            borderTop: '1px solid',
-            borderColor: 'divider',
-            // The product's lines breathe; a tight row makes the borderless
-            // pickers read as cramped text rather than as fields.
-            '& tbody .MuiTableCell-root': { py: 1.25 },
-            // Ruled columns, which is what stops a borderless picker reading as
-            // loose text: the rule is the field's edge.
-            '& thead .MuiTableCell-root:not(:last-of-type)': {
-              borderRight: '1px solid',
-              borderRightColor: 'divider',
-            },
-            '& .MuiTableCell-root:first-of-type, & .MuiTableCell-root:last-of-type': {
-              borderLeft: '1px solid',
-              borderLeftColor: 'divider',
-            },
-            '& .MuiTableCell-root:first-of-type': { borderLeft: 'none' },
-          }}
-        >
-          <Table size="sm">
-            <TableHead>
-              <TableRow>
-                <TableCell sx={{ fontFamily: 'mono', width: 56 }}>#</TableCell>
-                <TableCell sx={{ fontFamily: 'mono', width: '31%' }}>Description</TableCell>
-                <TableCell sx={{ fontFamily: 'mono', width: '23%' }}>Line Total</TableCell>
-                <TableCell sx={{ fontFamily: 'mono', width: '23%' }}>
-                  <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>
-                    <Box component="span" sx={{ flex: 1 }}>
-                      VAT Tax Code <Required />
-                    </Box>
-                    <ColumnCodePicker
-                      heading="VAT tax code"
-                      options={VAT_CODES}
-                      disabled={readOnly}
-                      onPickAll={(value) =>
-                        invoice.lines.forEach((l) => setLineCode(invoice.id, l.id, 'vat', value))
-                      }
-                    />
-                  </Stack>
-                </TableCell>
-                <TableCell sx={{ fontFamily: 'mono', width: '23%' }}>
-                  <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>
-                    <Box component="span" sx={{ flex: 1 }}>
-                      WHT Tax Code <Required />
-                    </Box>
-                    <ColumnCodePicker
-                      heading="WHT tax code"
-                      options={WHT_CODES}
-                      disabled={readOnly}
-                      onPickAll={(value) =>
-                        invoice.lines.forEach((l) => setLineCode(invoice.id, l.id, 'wht', value))
-                      }
-                    />
-                  </Stack>
-                </TableCell>
-                <TableCell padding="checkbox" />
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {invoice.lines.map((l, index) => (
-                <TableRow key={l.id}>
-                  <TableCell sx={{ fontFamily: 'mono' }}>{index + 1}</TableCell>
-                  <TableCell>{l.description}</TableCell>
-                  <TableCell sx={{ fontFamily: 'mono' }}>
-                    {money(l.invoiceLineTotal, invoice.currency)}
-                  </TableCell>
-                  <TableCell padding="none" sx={{ pr: 1 }}>
-                    <CodePicker
-                      label="VAT tax code"
-                      rowLabel={l.description}
-                      value={l.vat}
-                      options={VAT_CODES}
-                      disabled={readOnly}
-                      onPick={(value) => setLineCode(invoice.id, l.id, 'vat', value)}
-                      minWidth={160}
-                    />
-                  </TableCell>
-                  <TableCell padding="none" sx={{ pr: 1 }}>
-                    <CodePicker
-                      label="WHT tax code"
-                      rowLabel={l.description}
-                      value={l.wht}
-                      options={WHT_CODES}
-                      disabled={readOnly}
-                      onPick={(value) => setLineCode(invoice.id, l.id, 'wht', value)}
-                      minWidth={140}
-                    />
-                  </TableCell>
-                  <TableCell padding="checkbox">
-                    <Tooltip title="Split this line">
-                      <IconButton
-                        variant="secondary"
-                        appearance="text"
-                        size="sm"
-                        aria-label={`Split ${l.description}`}
-                        disabled={readOnly}
-                      >
-                        <ScissorsIcon />
-                      </IconButton>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+      <Divider />
 
-        {/* The footer the product carries under a line table. */}
-        <Stack
-          direction="row"
-          sx={{
-            px: 3,
-            py: 1.5,
-            gap: 3,
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            borderTop: '1px solid',
-            borderColor: 'divider',
-          }}
-        >
-          <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'mono' }}>
-            Total {invoice.lines.length} items
-          </Typography>
-          <Stack direction="row" sx={{ gap: 1.5, alignItems: 'center' }}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'mono' }}>
-              Rows per page
-            </Typography>
-            <CodePicker
-              label="Rows per page"
-              rowLabel="this table"
-              value={String(rowsPerPage)}
-              options={['10', '25', '50']}
-              onPick={(value) => setRowsPerPage(Number(value))}
-              minWidth={72}
-              fullWidth={false}
-              bordered
-            />
-          </Stack>
-          <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>
-            <IconButton variant="secondary" appearance="text" size="sm" aria-label="Previous page" disabled>
-              <CaretLeftIcon />
-            </IconButton>
-            <Typography variant="body2" sx={{ fontFamily: 'mono' }}>
-              01
-            </Typography>
-            <IconButton variant="secondary" appearance="text" size="sm" aria-label="Next page" disabled>
-              <CaretRightIcon />
-            </IconButton>
-          </Stack>
-        </Stack>
+      {/* The grid fills what is left rather than growing with its rows, so the
+          footer that counts them stays on screen. */}
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          '& .MuiDataGrid-columnHeaderTitle': MONO,
+          // Ruled columns, which is what stops a borderless picker reading as
+          // loose text: the rule is the field's edge.
+          '& .MuiDataGrid-columnHeader:not(:last-of-type)': {
+            borderRight: '1px solid',
+            borderRightColor: 'divider',
+          },
+          '& .MuiDataGrid-cell:not(:last-of-type)': {
+            borderRight: '1px solid',
+            borderRightColor: 'divider',
+          },
+        }}
+      >
+        <DataGrid
+          size="sm"
+          rows={rows}
+          columns={columns}
+          rowNoun="line items"
+          pagination
+          initialState={{ pagination: { paginationModel: { pageSize: PAGE_SIZE } } }}
+          // A line the ERP will refuse. The message above names it; this is
+          // what makes it findable without counting.
+          rowState={({ row }) =>
+            (row as PostingRow).vat === '' || (row as PostingRow).wht === '' ? 'error' : undefined
+          }
+          disableColumnMenu
+          disableRowSelectionOnClick
+        />
       </Box>
 
       {/* What the ERP said to a dry run. */}
       <Dialog open={showResult} onClose={() => setShowResult(false)} fullWidth maxWidth="sm">
         <DialogTitle
-          subtitle={erp.simulated ? formatDateTime(erp.simulated.at) : undefined}
+          subtitle={run ? formatDateTime(run.at) : undefined}
           onClose={() => setShowResult(false)}
         >
-          {erp.simulated?.ok ? 'Simulation passed' : 'Simulation failed'}
+          {run?.ok ? 'Simulation passed' : 'Simulation failed'}
         </DialogTitle>
         <DialogContent>
           <Stack sx={{ gap: 2 }}>
-            <Alert severity={erp.simulated?.ok ? 'success' : 'error'} floating>
-              {erp.simulated?.message}
+            <Alert severity={run?.ok ? 'success' : 'error'} floating>
+              {run?.message}
             </Alert>
 
-            {erp.simulated && erp.simulated.lines.length > 0 && (
+            {run && run.lines.length > 0 && (
               <Stack sx={{ gap: 1 }}>
                 <Typography variant="body2" color="text.secondary">
                   The GL account is derived from the purchase order, so these are the accounts the
@@ -358,7 +457,7 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {erp.simulated.lines.map((l) => (
+                      {run.lines.map((l) => (
                         <TableRow key={l.lineId}>
                           <TableCell>{l.description}</TableCell>
                           <TableCell>{l.gl}</TableCell>
@@ -378,6 +477,6 @@ export function ErpPosting({ invoice }: { invoice: Invoice }) {
           </Button>
         </DialogActions>
       </Dialog>
-    </>
+    </Stack>
   );
 }

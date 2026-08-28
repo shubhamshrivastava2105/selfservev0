@@ -221,6 +221,9 @@ export const VAT_CODES = [
 
 export const WHT_CODES = ['US-NONE', 'US-1099-NEC', 'US-BACKUP-24'];
 
+/** The one sales-tax code the seed set uses, so a line and its header agree. */
+const SALES_TAX_CA = 'US-CA-SALES-7.25';
+
 /* ── Defaults ─────────────────────────────────────────────────────────── */
 
 /**
@@ -556,6 +559,10 @@ function erpFor(
 ): ErpPayload {
   const beforeVat = invoice.lines.reduce((sum, l) => sum + l.invoiceLineTotal, 0);
   const poTotal = invoice.lines.reduce((sum, l) => sum + l.poLineTotal, 0);
+  // Both sides of the variance are pre-tax. Comparing the tax-inclusive header
+  // total against tax-exclusive order lines reports the tax as a variance,
+  // which is only invisible while every invoice in the set is tax-exempt.
+  const variance = Number((beforeVat - poTotal).toFixed(2));
   return {
     poNumber: invoice.poNumber ?? '',
     amountBeforeVat: Number(beforeVat.toFixed(2)),
@@ -569,7 +576,7 @@ function erpFor(
     // line, which is what an AP clerk types there.
     docHeader: invoice.lines[0]?.description ?? '',
     refKey2: '',
-    variance: Number((invoice.amount - poTotal).toFixed(2)),
+    variance,
     simulated: null,
   };
 }
@@ -1059,6 +1066,102 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     ],
     ingestedAt: at(7, 16, 40),
     firstSurfacedAt: at(7, 16, 41),
+    terminalAt: null,
+  },
+
+  /*
+   * Sitting at posting, matched and waiting for a dry run. Twelve lines, which
+   * is what the posting table was built for: enough to page, enough for the
+   * tax-code column to be a column of decisions rather than one repeated
+   * value, and a service line at the bottom that withholds where the goods
+   * above it do not.
+   *
+   * The only record in the set carrying sales tax, so the header's two amounts
+   * are two different numbers the way they are on a real posting.
+   */
+  {
+    id: 'inv-51288',
+    number: 'INV-51288',
+    vendor: 'Cascade Industrial Parts',
+    legalEntity: LEGAL_ENTITY,
+    currency: 'USD',
+    amount: 16453.22,
+    invoiceDate: at(4),
+    poNumber: 'PO-US-51288',
+    source: 'Mailbox',
+    sourceId: 'src-mail-1',
+    isSample: false,
+    stpPosted: false,
+    stage: 'posting',
+    status: 'ERP posting',
+    invoiceFields: invoiceFields({
+      number: 'INV-51288',
+      date: formatDate(at(4)),
+      dueDate: formatDate(at(-26)),
+      vendor: 'Cascade Industrial Parts',
+      vendorCode: 'CIP-0088',
+      vendorTaxId: '91-2044517',
+      po: 'PO-US-51288',
+      currency: 'USD',
+      terms: 'Net 30',
+      subtotal: '15,435.50',
+      tax: '1,017.72',
+      total: '16,453.22',
+      remitTo: '2020 Foundry Rd, Portland OR 97210',
+      taxCode: 'US-CA-SALES-7.25',
+    }),
+    poFields: poFields(
+      {
+        number: 'PO-US-51288',
+        vendor: 'Cascade Industrial Parts',
+        currency: 'USD',
+        total: '16,453.22',
+      },
+      'zoho',
+    ),
+    grnFields: grnFields(
+      { number: 'GRN-51288', poRef: 'PO-US-51288', receiptDate: formatDate(at(5)) },
+      'zoho',
+    ),
+    poSource: 'zoho',
+    grnSource: 'zoho',
+    lines: [
+      line('l1', 'Steel toe boots — size 10', 24, 24, 24, 118.5, '6300 · Safety and workwear', SALES_TAX_CA),
+      line('l2', 'Reflective safety vest — class 2', 60, 60, 60, 21.75, '6300 · Safety and workwear', SALES_TAX_CA),
+      line('l3', 'Industrial ear muffs — 25dB', 40, 40, 40, 18.4, '6300 · Safety and workwear', SALES_TAX_CA),
+      line('l4', 'Welding face shield', 12, 12, 12, 96.25, '6300 · Safety and workwear', SALES_TAX_CA),
+      line('l5', 'Nitrile gloves — box of 100', 80, 80, 80, 14.6, '6300 · Safety and workwear', SALES_TAX_CA),
+      line('l6', 'Dust respirator N95 — box of 20', 30, 30, 30, 32.8, '6300 · Safety and workwear', SALES_TAX_CA),
+      line('l7', 'Fall harness kit', 8, 8, 8, 289.0, '6300 · Safety and workwear', SALES_TAX_CA),
+      line('l8', 'Fire retardant coverall', 16, 16, 16, 145.9, '6300 · Safety and workwear', SALES_TAX_CA),
+      line('l9', 'First aid station — wall mount', 4, 4, 4, 212.4, '6300 · Safety and workwear', SALES_TAX_CA),
+      line('l10', 'Eye wash station refill', 6, 6, 6, 58.25, '6300 · Safety and workwear', SALES_TAX_CA),
+      line('l11', 'Safety signage — bilingual set', 10, 10, 10, 44.8, '6300 · Safety and workwear'),
+      // Labour, not goods: no sales tax on it, and it is the one line that
+      // withholds.
+      line('l12', 'On-site safety training — half day', 1, 1, 1, 950.0, '6600 · Training and development', 'US-EXEMPT', 'US-1099-NEC'),
+    ],
+    attachments: [
+      { name: 'delivery-note-51288.pdf', kind: 'Supporting document' },
+      { name: 'coa-51288.pdf', kind: 'Supporting document' },
+    ],
+    matchResult: {
+      matchTypeUsed: '3-way',
+      ranAt: at(4, 10, 5),
+      duplicate: { state: 'pass' },
+      metadata: { state: 'pass', findings: [] },
+      lineItem: { state: 'pass', findings: [] },
+      hardBlock: null,
+    },
+    overrides: [],
+    audit: [
+      audit(at(4, 10, 2), 'Ingested', 'Mailbox · Invoices/Inbound'),
+      audit(at(4, 10, 4), 'Extraction complete', 'Every mandatory field cleared its threshold'),
+      audit(at(4, 10, 5), 'Matching run', 'All three checks passed'),
+      audit(at(4, 10, 6), 'Validated', 'Moved to ERP posting', 'Vibhor Sharma'),
+    ],
+    ingestedAt: at(4, 10, 2),
+    firstSurfacedAt: at(4, 10, 5),
     terminalAt: null,
   },
 
