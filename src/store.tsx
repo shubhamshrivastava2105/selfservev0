@@ -202,14 +202,6 @@ interface Store {
 
   /* Invoice actions */
   editField: (id: string, scope: FieldScope, key: string, value: string) => void;
-  /**
-   * Agree with a value as read or proposed, without changing it.
-   *
-   * Correcting is not the only way to check something. A suggestion nobody
-   * edits would otherwise stay flagged for ever, because there is no edit to
-   * make when the proposal is already right.
-   */
-  confirmField: (id: string, scope: FieldScope, key: string) => void;
   advanceToMatching: (id: string) => void;
   advanceToPosting: (id: string) => void;
   rerunMatching: (id: string) => void;
@@ -636,37 +628,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             invoice,
             'Field corrected',
             `${target.label}: "${target.value}" → "${value}"`,
-          ),
-        };
-      });
-      did('reviewed');
-    },
-    [patch, actor, did],
-  );
-
-  const confirmField = React.useCallback<Store['confirmField']>(
-    (id, scope, key) => {
-      patch(id, (invoice) => {
-        const fields = fieldsFor(invoice, scope);
-        const target = fields.find((f) => f.key === key);
-        if (!target) return invoice;
-        const next = fields.map((f) =>
-          f.key === key
-            ? {
-                ...f,
-                // Checked by a person, so it is no longer an open question —
-                // the same standing a correction earns.
-                confidence: f.confidence === null ? null : 100,
-                inferred: undefined,
-              }
-            : f,
-        );
-        return {
-          ...withFields(invoice, scope, next),
-          audit: appendAudit(
-            invoice,
-            target.inferred ? 'Suggestion accepted' : 'Value confirmed',
-            `${target.label}: "${target.value}"`,
           ),
         };
       });
@@ -1681,7 +1642,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     landingMode,
     activity,
     editField,
-    confirmField,
     advanceToMatching,
     advanceToPosting,
     rerunMatching,

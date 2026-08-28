@@ -1,7 +1,6 @@
 import * as React from 'react';
 import {
   Box,
-  Button,
   Chip,
   Stack,
   Tab,
@@ -16,7 +15,7 @@ import {
   Tooltip,
   Typography,
 } from '@neofloai/atoms';
-import { CheckIcon, SparkleIcon, WarningIcon } from '@neofloai/atoms/icons';
+import { SparkleIcon, WarningIcon } from '@neofloai/atoms/icons';
 import { useStore } from '../../store';
 import { confidenceTone } from '../../components/common';
 import { money, num } from '../../engine';
@@ -42,7 +41,7 @@ function FieldRow({
   invoiceId: string;
   readOnly?: boolean;
 }) {
-  const { config, editField, confirmField } = useStore();
+  const { config, editField } = useStore();
   const tone = confidenceTone(field.confidence, config.confidenceThreshold);
   const low = tone === 'amber' || tone === 'red';
 
@@ -150,29 +149,18 @@ function FieldRow({
             whether to accept a proposal should not have to hover to see what it
             was based on. And a way to agree, because editing is no use when the
             proposal is already right. */}
-        {/* Stacked, not side by side: the reason is a full sentence and the
-            value column is narrow, so a row of the two collides. */}
+        {/* The reason, printed rather than tooltipped: somebody weighing a
+            proposal should not have to hover to see what it rests on. There is
+            nothing to accept — correcting it is the only action, and
+            proceeding is how you say it was already right. */}
         {needsReview && field.inferred && (
-          <Stack sx={{ gap: 0.75, mt: 0.5, alignItems: 'flex-start' }}>
-            <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'normal' }}>
-              {field.inferred.because}
-            </Typography>
-            {!readOnly && (
-              <Button
-                variant="secondary"
-                appearance="outline"
-                size="sm"
-                startIcon={<CheckIcon size={14} />}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  confirmField(invoiceId, 'invoice', field.key);
-                }}
-                sx={{ whiteSpace: 'nowrap' }}
-              >
-                Looks right
-              </Button>
-            )}
-          </Stack>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'block', mt: 0.5, whiteSpace: 'normal' }}
+          >
+            {field.inferred.because}
+          </Typography>
         )}
       </TableCell>
     </TableRow>
@@ -198,9 +186,31 @@ export function ExtractedData({
 }) {
   const [tab, setTab] = React.useState<'metadata' | 'lines'>('metadata');
   const { config } = useStore();
-  const pending = invoice.invoiceFields.filter(
+  /**
+   * How many values want a look. Kept apart from the tab counts, which say how
+   * many values there are — one badge meaning "flagged" while the badge beside
+   * it means "total" is a number nobody can read.
+   */
+  const flagged = invoice.invoiceFields.filter(
     (f) => f.confidence !== null && f.confidence < config.confidenceThreshold,
   ).length;
+  const flaggedLines = invoice.lines.filter((l) => l.confidence < config.confidenceThreshold).length;
+
+  /** A count, with a dot beside it when something on that tab is flagged. */
+  const tabLabel = (text: string, needsAttention: number) => (
+    <Stack direction="row" sx={{ gap: 0.75, alignItems: 'center' }}>
+      <span>{text}</span>
+      {needsAttention > 0 && (
+        <Tooltip
+          title={`${needsAttention} ${needsAttention === 1 ? 'value needs' : 'values need'} a look`}
+        >
+          <Box
+            sx={{ width: 6, height: 6, borderRadius: 999, backgroundColor: 'warning.main' }}
+          />
+        </Tooltip>
+      )}
+    </Stack>
+  );
 
   return (
     <Stack sx={{ width: 620, flexShrink: 0, minHeight: 0 }}>
@@ -212,8 +222,16 @@ export function ExtractedData({
 
       <Box sx={{ px: 3 }}>
         <Tabs value={tab} onChange={(_, next) => setTab(next)} aria-label="Extracted data">
-          <Tab label="Metadata" value="metadata" count={pending || undefined} />
-          <Tab label="Line items" value="lines" count={invoice.lines.length} />
+          <Tab
+            label={tabLabel('Metadata', flagged)}
+            value="metadata"
+            count={invoice.invoiceFields.length}
+          />
+          <Tab
+            label={tabLabel('Line items', flaggedLines)}
+            value="lines"
+            count={invoice.lines.length}
+          />
         </Tabs>
       </Box>
 
