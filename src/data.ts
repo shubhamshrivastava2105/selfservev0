@@ -514,24 +514,40 @@ function line(
   };
 }
 
+/** Marks the deliveries a line arrived on, for a line built by `line()`. */
+function received(
+  l: MatchLine,
+  receipts: { grnNo: string; qty: number; poNo?: string }[],
+): MatchLine {
+  return { ...l, receipts };
+}
+
 /**
  * The GRN side of the comparison, built from the lines that were received. The
  * product shows receipts as their own rows carrying a PO and GRN number, so a
- * line received against two POs appears twice.
+ * line that arrived in three deliveries appears three times and the panel adds
+ * them up against the invoice line they satisfy.
+ *
+ * A line that names no receipts arrived in one, on the receipt raised against
+ * its own purchase order.
  */
 function grnLinesFor(lines: MatchLine[], poNumber: string | null): GrnLine[] {
+  const fallbackGrn = poNumber ? `GRN-${poNumber.replace(/\D/g, '').slice(-5)}` : 'GRN-—';
   return lines
     .filter((l) => l.grnQty !== null)
-    .map((l) => ({
-      id: `grn-${l.id}`,
-      poNo: poNumber ?? '—',
-      grnNo: l.itemNo,
-      description: l.description,
-      qty: l.grnQty as number,
-      unitPrice: l.poUnitPrice,
-      lineTotal: Number(((l.grnQty as number) * l.poUnitPrice).toFixed(2)),
-      matchedTo: l.id,
-    }));
+    .flatMap((l) => {
+      const receipts = l.receipts ?? [{ grnNo: fallbackGrn, qty: l.grnQty as number }];
+      return receipts.map((r, index) => ({
+        id: `grn-${l.id}-${index}`,
+        poNo: r.poNo ?? poNumber ?? '—',
+        grnNo: r.grnNo,
+        description: l.description,
+        qty: r.qty,
+        unitPrice: l.poUnitPrice,
+        lineTotal: Number((r.qty * l.poUnitPrice).toFixed(2)),
+        matchedTo: l.id,
+      }));
+    });
 }
 
 /** The payload the posting stage writes, derived from what was matched. */
@@ -802,6 +818,115 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     ],
     ingestedAt: at(1, 8, 12),
     firstSurfacedAt: at(1, 8, 13),
+    terminalAt: null,
+  },
+
+  /*
+   * A 3-way match that came out clean, sitting at matching waiting to be
+   * validated. Six lines, each received across the deliveries it actually
+   * arrived on, so the receipt panel adds three rows up against one invoice
+   * line rather than showing a tidy one-to-one that no warehouse produces.
+   *
+   * One line is off: the cable arms were billed at 22.60 against 22.00 on the
+   * order. Inside tolerance, so nothing blocks — it is the case the screen
+   * exists for, a group that is plausibly right but does not add up.
+   */
+  {
+    id: 'inv-77655',
+    number: 'INV-77655',
+    vendor: 'Sierra Networks',
+    legalEntity: LEGAL_ENTITY,
+    currency: 'USD',
+    amount: 13257.52,
+    invoiceDate: at(3),
+    poNumber: 'PO-US-77655',
+    source: 'Mailbox',
+    sourceId: 'src-mail-1',
+    isSample: false,
+    stpPosted: false,
+    stage: 'matching',
+    status: 'Matching',
+    invoiceFields: invoiceFields(
+      {
+        number: 'INV-77655',
+        date: formatDate(at(3)),
+        dueDate: formatDate(at(-27)),
+        vendor: 'Sierra Networks',
+        // The same vendor as INV-77120, so the same codes.
+        vendorCode: '760114882 (SN-4471)',
+        vendorTaxId: '760114882 (SN-4471)',
+        po: 'PO-US-77655',
+        currency: 'USD',
+        terms: 'Net 30',
+        subtotal: '13,257.52',
+        tax: '0.00',
+        total: '13,257.52',
+        remitTo: '2200 Sierra Point Pkwy, Brisbane CA 94005',
+        taxCode: 'US-EXEMPT',
+      },
+      {},
+      97,
+      // The one header field the two documents disagree on, and the reason the
+      // order is 7.20 lighter than the bill.
+      { total: '13,250.32', subtotal: '13,250.32' },
+    ),
+    poFields: poFields(
+      { number: 'PO-US-77655', vendor: 'Sierra Networks', currency: 'USD', total: '13,250.32' },
+      'zoho',
+    ),
+    grnFields: grnFields(
+      { number: 'GRN-4471', poRef: 'PO-US-77655', receiptDate: formatDate(at(6)) },
+      'zoho',
+    ),
+    poSource: 'zoho',
+    grnSource: 'zoho',
+    lines: [
+      // Switches came in three drops, the last one against a second order.
+      received(line('l1', 'Network switch — 48 port PoE+', 12, 12, 12, 720.0, '6400 · IT and software'), [
+        { grnNo: 'GRN-4471', qty: 5 },
+        { grnNo: 'GRN-4488', qty: 4 },
+        { grnNo: 'GRN-4502', qty: 3, poNo: 'PO-US-77660' },
+      ]),
+      received(line('l2', 'SFP+ transceiver — 10GbE SR', 40, 40, 40, 41.5, '6400 · IT and software'), [
+        { grnNo: 'GRN-4471', qty: 24 },
+        { grnNo: 'GRN-4488', qty: 16 },
+      ]),
+      received(line('l3', 'Patch cable — Cat6A, 3 ft', 200, 200, 200, 4.85, '6400 · IT and software'), [
+        { grnNo: 'GRN-4471', qty: 120 },
+        { grnNo: 'GRN-4502', qty: 80, poNo: 'PO-US-77660' },
+      ]),
+      received(line('l4', 'Rack shelf — 1U vented', 10, 10, 10, 38.0, '6500 · Repairs and maintenance'), [
+        { grnNo: 'GRN-4488', qty: 10 },
+      ]),
+      // Billed at 22.60 against 22.00 on the order. 7.20 over, inside both
+      // line tolerances, so it is shown rather than blocked.
+      received(
+        line('l5', 'Cable management arm', 12, 12, 12, 22.6, '6500 · Repairs and maintenance', 'US-EXEMPT', 'US-NONE', 22.0),
+        [{ grnNo: 'GRN-4502', qty: 12, poNo: 'PO-US-77660' }],
+      ),
+      received(line('l6', 'PDU — 8 outlet, 1U', 24, 24, 24, 55.68, '6400 · IT and software'), [
+        { grnNo: 'GRN-4488', qty: 16 },
+        { grnNo: 'GRN-4519', qty: 8 },
+      ]),
+    ],
+    attachments: [{ name: 'delivery-note-77655.pdf', kind: 'Supporting document' }],
+    matchResult: {
+      matchTypeUsed: '3-way',
+      ranAt: at(3, 8, 40),
+      duplicate: { state: 'pass' },
+      metadata: { state: 'pass', findings: [] },
+      lineItem: { state: 'pass', findings: [] },
+      hardBlock: null,
+    },
+    overrides: [],
+    audit: [
+      audit(at(3, 8, 38), 'Ingested', 'Mailbox · Invoices/Inbound'),
+      audit(at(3, 8, 39), 'Extraction complete', 'Every mandatory field cleared its threshold'),
+      audit(at(3, 8, 40), 'Auto-advanced to matching'),
+      audit(at(3, 8, 40), 'Matching run', 'All three checks passed. One line inside tolerance'),
+    ],
+    ingestedAt: at(3, 8, 38),
+    firstSurfacedAt: at(3, 8, 40),
     terminalAt: null,
   },
 

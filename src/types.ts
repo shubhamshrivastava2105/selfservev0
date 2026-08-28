@@ -172,6 +172,13 @@ export interface MatchLine {
    * other value, so it carries a score like any other value.
    */
   confidence: number;
+  /**
+   * The deliveries the line actually arrived on. A quantity rarely turns up in
+   * one drop, so a single invoice line is satisfied by several goods receipts
+   * booked on different days and sometimes against different purchase orders.
+   * Absent means the whole received quantity came on one receipt.
+   */
+  receipts?: { grnNo: string; qty: number; poNo?: string }[];
 }
 
 export interface MetadataFinding {
