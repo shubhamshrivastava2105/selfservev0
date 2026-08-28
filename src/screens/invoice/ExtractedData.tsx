@@ -1,6 +1,7 @@
 import * as React from 'react';
 import {
   Box,
+  Button,
   Chip,
   Stack,
   Tab,
@@ -15,7 +16,7 @@ import {
   Tooltip,
   Typography,
 } from '@neofloai/atoms';
-import { SparkleIcon, WarningIcon } from '@neofloai/atoms/icons';
+import { CheckIcon, SparkleIcon, WarningIcon } from '@neofloai/atoms/icons';
 import { useStore } from '../../store';
 import { confidenceTone } from '../../components/common';
 import { money, num } from '../../engine';
@@ -41,7 +42,7 @@ function FieldRow({
   invoiceId: string;
   readOnly?: boolean;
 }) {
-  const { config, editField } = useStore();
+  const { config, editField, confirmField } = useStore();
   const tone = confidenceTone(field.confidence, config.confidenceThreshold);
   const low = tone === 'amber' || tone === 'red';
 
@@ -56,6 +57,9 @@ function FieldRow({
     if (draft !== field.value) editField(invoiceId, 'invoice', field.key, draft);
   };
 
+  /** A proposal nobody has agreed to yet. Correcting or confirming clears it. */
+  const needsReview = Boolean(field.inferred) && field.editedFrom === undefined;
+
   return (
     <TableRow
       hover
@@ -63,8 +67,14 @@ function FieldRow({
       onClick={onSelect}
       sx={{
         cursor: field.region ? 'pointer' : 'default',
-        // A suggestion is the one row on this table that wants an answer.
-        backgroundColor: field.inferred && !field.editedFrom ? 'purple.subtle' : undefined,
+        // A suggestion is the one row on this table that wants an answer, so it
+        // is the one row that looks different without being pointed at.
+        ...(needsReview && {
+          backgroundColor: 'warning.subtle',
+          '& > td:first-of-type': {
+            boxShadow: (theme) => `inset 3px 0 0 0 ${theme.palette.warning.main}`,
+          },
+        }),
       }}
     >
       <TableCell>
@@ -82,7 +92,9 @@ function FieldRow({
           {/* Borderless until you are in it, so a column of these still reads
               as values rather than as a form. */}
           <TextField
-            aria-label={`${field.label}, currently ${field.value || 'empty'}`}
+            aria-label={`${field.label}, currently ${field.value || 'empty'}${
+              needsReview ? '. Suggested by Neoflo and not yet checked.' : ''
+            }`}
             value={draft}
             disabled={readOnly}
             onChange={(event) => setDraft(event.target.value)}
@@ -105,18 +117,25 @@ function FieldRow({
             }}
           />
           {/* Not read at all, but worked out. Named as such, because agreeing
-              to a suggestion and confirming a reading are different acts. */}
+              to a suggestion and confirming a reading are different acts — and
+              the score says how much of a guess it was. */}
           {field.inferred && (
-            <Tooltip title={field.inferred.because}>
-              <Box sx={{ flexShrink: 0 }}>
+            <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center', flexShrink: 0 }}>
+              <Chip
+                size="sm"
+                variant="purple"
+                icon={<SparkleIcon size={12} />}
+                label="AI suggested"
+              />
+              {field.confidence !== null && (
                 <Chip
                   size="sm"
-                  variant="purple"
-                  icon={<SparkleIcon size={12} />}
-                  label="Suggested"
+                  variant="warning"
+                  icon={<WarningIcon size={12} />}
+                  label={`${field.confidence}% · verify`}
                 />
-              </Box>
-            </Tooltip>
+              )}
+            </Stack>
           )}
           {/* A mark, not a number: the number is on the document. */}
           {low && !field.inferred && (
@@ -127,6 +146,34 @@ function FieldRow({
             </Tooltip>
           )}
         </Stack>
+        {/* The reason, on the row rather than in a tooltip: somebody deciding
+            whether to accept a proposal should not have to hover to see what it
+            was based on. And a way to agree, because editing is no use when the
+            proposal is already right. */}
+        {/* Stacked, not side by side: the reason is a full sentence and the
+            value column is narrow, so a row of the two collides. */}
+        {needsReview && field.inferred && (
+          <Stack sx={{ gap: 0.75, mt: 0.5, alignItems: 'flex-start' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'normal' }}>
+              {field.inferred.because}
+            </Typography>
+            {!readOnly && (
+              <Button
+                variant="secondary"
+                appearance="outline"
+                size="sm"
+                startIcon={<CheckIcon size={14} />}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  confirmField(invoiceId, 'invoice', field.key);
+                }}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                Looks right
+              </Button>
+            )}
+          </Stack>
+        )}
       </TableCell>
     </TableRow>
   );
