@@ -11,11 +11,8 @@ import {
   useColorScheme,
 } from '@neofloai/atoms';
 import {
-  DatabaseIcon,
   MoonIcon,
-  SealCheckIcon,
   SunIcon,
-  WarningIcon,
 } from '@neofloai/atoms/icons';
 import type { ChipVariant } from '@neofloai/atoms';
 import type { InvoiceStatus } from '../types';
@@ -77,45 +74,6 @@ export function confidenceTone(confidence: number | null, threshold: number): Co
   return confidence >= threshold - 15 ? 'amber' : 'red';
 }
 
-/**
- * The confidence score is shown on the field itself, not only as a color
- * (Workflow PRD §4).
- */
-export function ConfidenceBadge({
-  confidence,
-  threshold,
-}: {
-  confidence: number | null;
-  threshold: number;
-}) {
-  const tone = confidenceTone(confidence, threshold);
-
-  if (tone === 'ground-truth') {
-    return (
-      <Tooltip title="Structured record from Zoho. Ground truth — no confidence score, nothing to check.">
-        <Chip size="sm" variant="information" icon={<DatabaseIcon size={12} />} label="From Zoho" />
-      </Tooltip>
-    );
-  }
-  if (tone === 'clear') {
-    return (
-      <Chip
-        size="sm"
-        variant="success"
-        icon={<SealCheckIcon size={12} />}
-        label={`${confidence}%`}
-      />
-    );
-  }
-  return (
-    <Chip
-      size="sm"
-      variant={tone === 'amber' ? 'warning' : 'error'}
-      icon={<WarningIcon size={12} />}
-      label={`${confidence}%`}
-    />
-  );
-}
 
 /* ── Layout helpers ───────────────────────────────────────────────────── */
 

@@ -13,6 +13,7 @@ import {
   ArrowCounterClockwiseIcon,
   CaretLeftIcon,
   CaretRightIcon,
+  FileTextIcon,
   MagnifyingGlassMinusIcon,
   MagnifyingGlassPlusIcon,
   SealCheckIcon,
@@ -20,12 +21,238 @@ import {
   WarningIcon,
   XIcon,
 } from '@neofloai/atoms/icons';
+import { fontFamilies } from '@neofloai/atoms/tokens';
 import { useStore } from '../../store';
 import { letterheadFor } from '../../data';
 import { confidenceTone } from '../../components/common';
 import type { ExtractedField, Invoice } from '../../types';
 
 const PAGES = 6;
+
+/** The outline a read value takes, from how clearly it was read. */
+function outlineFor(confidence: number | null, threshold: number) {
+  const t = confidenceTone(confidence, threshold);
+  if (t === 'ground-truth') return { line: 'var(--mui-palette-divider)', fill: 'transparent' };
+  if (t === 'red')
+    return { line: 'var(--mui-palette-error-main)', fill: 'var(--mui-palette-error-subtle)' };
+  if (t === 'amber')
+    return { line: 'var(--mui-palette-warning-main)', fill: 'var(--mui-palette-warning-subtle)' };
+  return { line: 'var(--mui-palette-success-main)', fill: 'transparent' };
+}
+
+/** Which documents this record actually has, in the order they were read. */
+type DocKind = 'invoice' | 'po' | 'grn';
+
+/**
+ * One read value on a reference document, with its score on hover.
+ *
+ * The same treatment the invoice page gives a field, without the coordinates:
+ * a purchase order is read the same way but nothing on the panel points at it,
+ * so there is nothing for a region to line up with.
+ */
+function ReadValue({
+  value,
+  confidence,
+  threshold,
+}: {
+  value: string;
+  confidence: number | null;
+  threshold: number;
+}) {
+  const tone = outlineFor(confidence, threshold);
+  return (
+    <Box
+      component="span"
+      sx={{
+        position: 'relative',
+        display: 'inline-block',
+        px: 0.5,
+        mx: -0.5,
+        borderRadius: 0.5,
+        outline: '1px solid transparent',
+        '&:hover': {
+          outline: `1px solid ${tone.line}`,
+          backgroundColor: tone.fill,
+          '& .score': { opacity: 1 },
+        },
+      }}
+    >
+      {value || '—'}
+      {confidence !== null && (
+        <Box
+          className="score"
+          sx={{
+            // Beside the value rather than over it: the label sits directly
+            // above, and a badge there covers the name of what it is scoring.
+            position: 'absolute',
+            top: '50%',
+            left: '100%',
+            transform: 'translateY(-50%)',
+            ml: 0.5,
+            px: 0.5,
+            fontSize: 9,
+            lineHeight: '13px',
+            borderRadius: 0.5,
+            color: 'common.white',
+            backgroundColor: tone.line,
+            opacity: 0,
+            transition: 'opacity 120ms',
+            pointerEvents: 'none',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {confidence}%
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+/**
+ * A purchase order or a goods receipt, as the document it now is.
+ *
+ * With no ERP connected these arrive as files somebody uploaded, so they are
+ * read like the invoice is read and carry a score per field like the invoice
+ * does. Laid out in flow rather than positioned: nothing on the panel selects
+ * one of these values, so there is no highlight that has to land true.
+ */
+function ReferenceSheet({
+  kind,
+  invoice,
+  threshold,
+}: {
+  kind: 'po' | 'grn';
+  invoice: Invoice;
+  threshold: number;
+}) {
+  const fields = kind === 'po' ? invoice.poFields : invoice.grnFields;
+  const letterhead = letterheadFor(invoice.vendor);
+  const title = kind === 'po' ? 'PURCHASE ORDER' : 'GOODS RECEIPT NOTE';
+  const lines = kind === 'po' ? invoice.lines : invoice.lines.filter((l) => l.grnQty !== null);
+
+  return (
+    <Box
+      sx={{
+        position: 'relative',
+        backgroundColor: 'background.paper',
+        border: '1px solid',
+        borderColor: 'divider',
+        aspectRatio: '1 / 1.35',
+        fontSize: 11,
+        p: '6%',
+      }}
+    >
+      <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <Stack sx={{ gap: 0.25 }}>
+          <Typography variant="caption" sx={{ fontWeight: 600 }}>
+            {invoice.legalEntity}
+          </Typography>
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+            1 Market Street, San Francisco CA 94105
+          </Typography>
+        </Stack>
+        <Typography sx={{ fontSize: 16, fontWeight: 300, letterSpacing: '0.18em' }}>
+          {title}
+        </Typography>
+      </Stack>
+
+      <Box sx={{ mt: 3 }}>
+        <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', letterSpacing: '0.1em' }}>
+          {kind === 'po' ? 'SUPPLIER' : 'RECEIVED FROM'}
+        </Typography>
+        <Typography variant="caption" sx={{ display: 'block', fontWeight: 600 }}>
+          {invoice.vendor}
+        </Typography>
+        <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
+          {letterhead.street}
+        </Typography>
+        <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
+          {letterhead.city}
+        </Typography>
+      </Box>
+
+      <Divider sx={{ my: 2 }} />
+
+      {/* The read values, which is all the extractor produced from this page. */}
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+          rowGap: 2,
+          columnGap: 3,
+        }}
+      >
+        {fields.map((f) => (
+          <Stack key={f.key} sx={{ gap: 0.25, minWidth: 0 }}>
+            <Typography variant="caption" sx={{ color: 'text.secondary', letterSpacing: '0.08em' }}>
+              {f.label.toUpperCase()}
+            </Typography>
+            <Typography variant="caption" sx={{ fontWeight: 600 }}>
+              <ReadValue value={f.value} confidence={f.confidence} threshold={threshold} />
+            </Typography>
+          </Stack>
+        ))}
+      </Box>
+
+      <Divider sx={{ my: 2 }} />
+
+      <Stack direction="row" sx={{ gap: 1, pb: 0.75 }}>
+        <Typography variant="caption" sx={{ width: 52, color: 'text.secondary' }}>
+          Item
+        </Typography>
+        <Typography variant="caption" sx={{ flex: 1, color: 'text.secondary' }}>
+          Description
+        </Typography>
+        <Typography variant="caption" sx={{ width: 40, textAlign: 'right', color: 'text.secondary' }}>
+          Qty
+        </Typography>
+        {kind === 'po' && (
+          <>
+            <Typography variant="caption" sx={{ width: 62, textAlign: 'right', color: 'text.secondary' }}>
+              Unit
+            </Typography>
+            <Typography variant="caption" sx={{ width: 70, textAlign: 'right', color: 'text.secondary' }}>
+              Amount
+            </Typography>
+          </>
+        )}
+      </Stack>
+      <Divider />
+      {lines.map((l) => (
+        <Stack key={l.id} direction="row" sx={{ gap: 1, py: 0.6 }}>
+          <Typography variant="caption" sx={{ width: 52, color: 'text.secondary' }}>
+            {l.itemNo}
+          </Typography>
+          <Typography variant="caption" sx={{ flex: 1, minWidth: 0 }} noWrap>
+            {l.description}
+          </Typography>
+          <Typography variant="caption" sx={{ width: 40, textAlign: 'right' }}>
+            {kind === 'po' ? l.poQty : l.grnQty}
+          </Typography>
+          {kind === 'po' && (
+            <>
+              <Typography variant="caption" sx={{ width: 62, textAlign: 'right' }}>
+                {l.poUnitPrice.toFixed(2)}
+              </Typography>
+              <Typography variant="caption" sx={{ width: 70, textAlign: 'right' }}>
+                {l.poLineTotal.toFixed(2)}
+              </Typography>
+            </>
+          )}
+        </Stack>
+      ))}
+
+      <Typography
+        variant="caption"
+        sx={{ display: 'block', mt: 3, color: 'text.secondary', fontStyle: 'italic' }}
+      >
+        {kind === 'po'
+          ? 'Goods to be supplied against this order only. Quote the order number on your invoice.'
+          : 'Received and checked against the order above. Discrepancies to be reported within 7 days.'}
+      </Typography>
+    </Box>
+  );
+}
 
 /**
  * The source document, and the evidence for a value.
@@ -47,11 +274,45 @@ export function DocumentPane({
   /** A line picked from the table, to mark and scroll to on the page. */
   selectedLineId?: string | null;
 }) {
-  const { config } = useStore();
+  const { config, connections } = useStore();
   const letterhead = letterheadFor(invoice.vendor);
   const [zoom, setZoom] = React.useState(100);
   const [rotation, setRotation] = React.useState(0);
   const [page, setPage] = React.useState(1);
+  /**
+   * Which document is on screen.
+   *
+   * With no ERP connected the purchase order and the receipt arrive as files
+   * somebody uploaded, so this stage read all three and the reader should be
+   * able to see all three. A reference fetched from a connected system is a
+   * record rather than a document and gets no tab, because there is no page.
+   */
+  const available: { kind: DocKind; label: string }[] = [
+    { kind: 'invoice', label: 'Invoice' },
+    ...(invoice.poSource === 'uploaded' && invoice.poFields.length > 0
+      ? [{ kind: 'po' as const, label: 'Purchase order' }]
+      : []),
+    ...(invoice.grnSource === 'uploaded' && invoice.grnFields.length > 0
+      ? [{ kind: 'grn' as const, label: 'Goods receipt' }]
+      : []),
+  ];
+  const [doc, setDoc] = React.useState<DocKind>('invoice');
+  /**
+   * A field picked in the panel is an invoice field, so it points at the
+   * invoice: leaving a reference document up beside it would highlight nothing
+   * and read as a broken selection.
+   *
+   * Adjusted during render rather than in an effect. The document to show is
+   * known from the selection that just changed, and an effect would paint the
+   * wrong document once before correcting itself.
+   */
+  const selectionKey = selected?.key ?? selectedLineId ?? null;
+  const [lastSelection, setLastSelection] = React.useState<string | null>(selectionKey);
+  if (selectionKey !== lastSelection) {
+    setLastSelection(selectionKey);
+    if (selectionKey !== null) setDoc('invoice');
+  }
+  const showingInvoice = doc === 'invoice';
 
   const scroller = React.useRef<HTMLDivElement | null>(null);
   const pageRef = React.useRef<HTMLDivElement | null>(null);
@@ -117,6 +378,33 @@ export function DocumentPane({
 
   return (
     <Stack sx={{ flex: 1, minWidth: 0, borderRight: '1px solid', borderColor: 'divider' }}>
+      {/* Which document is being read. One document is not a choice, so the
+          strip only appears once this record has more than the invoice. */}
+      {available.length > 1 && (
+        <Stack
+          direction="row"
+          sx={{
+            gap: 0.75,
+            px: 2,
+            py: 1,
+            alignItems: 'center',
+            flexShrink: 0,
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          {available.map((entry) => (
+            <Chip
+              key={entry.kind}
+              size="sm"
+              variant={doc === entry.kind ? 'information' : 'secondary'}
+              icon={<FileTextIcon size={12} />}
+              label={entry.label}
+              onClick={() => setDoc(entry.kind)}
+            />
+          ))}
+        </Stack>
+      )}
       <Box
         ref={scroller}
         sx={{ flex: 1, minHeight: 0, overflow: 'auto', p: 3, backgroundColor: 'action.hover' }}
@@ -131,10 +419,19 @@ export function DocumentPane({
             transition: 'transform 150ms',
           }}
         >
+          {!showingInvoice && (
+            <ReferenceSheet
+              kind={doc === 'po' ? 'po' : 'grn'}
+              invoice={invoice}
+              threshold={config.confidenceThreshold}
+            />
+          )}
+
           {/* The page. Everything on it is positioned, so a highlight lands true. */}
           <Box
             ref={pageRef}
             sx={{
+              display: showingInvoice ? undefined : 'none',
               position: 'relative',
               backgroundColor: 'background.paper',
               border: '1px solid',
@@ -480,7 +777,14 @@ export function DocumentPane({
                   </Stack>
 
                   {selected.confidence === null ? (
-                    <Chip size="sm" variant="information" label="From Zoho · ground truth" />
+                    // Not read off this page at all: it came as a record from
+                    // whatever system supplied it, so there is no score and
+                    // nothing on the document to point at.
+                    <Chip
+                      size="sm"
+                      variant="information"
+                      label={`From ${connections.zohoBooks ? 'Zoho Books' : 'a connected system'} · not read`}
+                    />
                   ) : (
                     <Stack direction="row" sx={{ gap: 0.75, alignItems: 'center' }}>
                       <Chip
@@ -587,15 +891,15 @@ export function DocumentPane({
             appearance="text"
             size="sm"
             aria-label="Previous page"
-            disabled={page === 1}
+            disabled={!showingInvoice || page === 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
           >
             <CaretLeftIcon />
           </IconButton>
-          <Typography variant="body2" sx={{ fontFamily: 'mono' }}>
-            {page}{' '}
+          <Typography variant="body2" sx={{ fontFamily: fontFamilies.product.mono }}>
+            {showingInvoice ? page : 1}{' '}
             <Box component="span" sx={{ color: 'text.secondary' }}>
-              of {PAGES}
+              of {showingInvoice ? PAGES : 1}
             </Box>
           </Typography>
           <IconButton
@@ -603,7 +907,7 @@ export function DocumentPane({
             appearance="text"
             size="sm"
             aria-label="Next page"
-            disabled={page === PAGES}
+            disabled={!showingInvoice || page === PAGES}
             onClick={() => setPage((p) => Math.min(PAGES, p + 1))}
           >
             <CaretRightIcon />
