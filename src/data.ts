@@ -74,6 +74,72 @@ export function readDomain(email: string): {
 export const LEGAL_ENTITY = 'Neoflo Inc.';
 
 /**
+ * The letterhead each vendor prints on its own invoices.
+ *
+ * The document view draws a real page, and a real page carries the sender's
+ * address and bank. Those cannot be one company's details reused for everyone —
+ * open a Puget Logistics invoice and it would show Sierra Networks' account
+ * number.
+ */
+export const VENDOR_LETTERHEAD: Record<
+  string,
+  { street: string; city: string; contact: string; bank: string; account: string }
+> = {
+  'Sierra Networks': {
+    street: '2400 Bridgeway, Suite 210',
+    city: 'Sausalito, CA 94965 · United States',
+    contact: 'ar@sierranetworks.example · +1 415 555 0114',
+    bank: 'Golden Gate Bank',
+    account: 'Routing 121000248 · Account ••••4417',
+  },
+  'Puget Logistics': {
+    street: '815 Terminal Way',
+    city: 'Tacoma, WA 98421 · United States',
+    contact: 'billing@pugetlogistics.example · +1 253 555 0188',
+    bank: 'Cascadia Commercial Bank',
+    account: 'Routing 125000024 · Account ••••8213',
+  },
+  'Cascade Industrial Parts': {
+    street: '4120 Foundry Road',
+    city: 'Portland, OR 97210 · United States',
+    contact: 'accounts@cascadeparts.example · +1 503 555 0142',
+    bank: 'Columbia River Bank',
+    account: 'Routing 123006800 · Account ••••4432',
+  },
+  'Redwood Office Supply': {
+    street: '18 Cedar Street',
+    city: 'Sacramento, CA 95814 · United States',
+    contact: 'ar@redwoodoffice.example · +1 916 555 0177',
+    bank: 'Valley First Bank',
+    account: 'Routing 121042882 · Account ••••9051',
+  },
+  'Bayline Freight': {
+    street: '77 Harbor Point Drive',
+    city: 'Oakland, CA 94607 · United States',
+    contact: 'invoices@baylinefreight.example · +1 510 555 0163',
+    bank: 'Bay Mercantile',
+    account: 'Routing 121000358 · Account ••••0448',
+  },
+  'Harbor Print Co': {
+    street: '260 Wharf Lane',
+    city: 'Seattle, WA 98101 · United States',
+    contact: 'ar@harborprint.example · +1 206 555 0119',
+    bank: 'Puget Sound Savings',
+    account: 'Routing 125008547 · Account ••••3312',
+  },
+};
+
+/** What to print for a vendor with no entry, so the page is never blank. */
+export const letterheadFor = (vendor: string) =>
+  VENDOR_LETTERHEAD[vendor] ?? {
+    street: 'Address on file',
+    city: 'United States',
+    contact: 'Billing contact on file',
+    bank: 'Bank on file',
+    account: 'Account details on file',
+  };
+
+/**
  * A second set of books in the same workspace.
  *
  * Real AP runs across entities, and reporting has a per-entity cut because that

@@ -187,9 +187,8 @@ export function ExtractedData({
   const [tab, setTab] = React.useState<'metadata' | 'lines'>('metadata');
   const { config } = useStore();
   /**
-   * How many values want a look. Kept apart from the tab counts, which say how
-   * many values there are — one badge meaning "flagged" while the badge beside
-   * it means "total" is a number nobody can read.
+   * How many values want a look. This drives the dot, never a badge — a badge
+   * meaning "flagged" beside one meaning "total" is a number nobody can read.
    */
   const flagged = invoice.invoiceFields.filter(
     (f) => f.confidence !== null && f.confidence < config.confidenceThreshold,
@@ -222,11 +221,9 @@ export function ExtractedData({
 
       <Box sx={{ px: 3 }}>
         <Tabs value={tab} onChange={(_, next) => setTab(next)} aria-label="Extracted data">
-          <Tab
-            label={tabLabel('Metadata', flagged)}
-            value="metadata"
-            count={invoice.invoiceFields.length}
-          />
+          {/* No count here. How many metadata fields there are is not a fact
+              anybody needs; the dot, which says one of them wants a look, is. */}
+          <Tab label={tabLabel('Metadata', flagged)} value="metadata" />
           <Tab
             label={tabLabel('Line items', flaggedLines)}
             value="lines"

@@ -21,6 +21,7 @@ import {
   XIcon,
 } from '@neofloai/atoms/icons';
 import { useStore } from '../../store';
+import { letterheadFor } from '../../data';
 import { confidenceTone } from '../../components/common';
 import type { ExtractedField, Invoice } from '../../types';
 
@@ -47,6 +48,7 @@ export function DocumentPane({
   selectedLineId?: string | null;
 }) {
   const { config } = useStore();
+  const letterhead = letterheadFor(invoice.vendor);
   const [zoom, setZoom] = React.useState(100);
   const [rotation, setRotation] = React.useState(0);
   const [page, setPage] = React.useState(1);
@@ -159,13 +161,13 @@ export function DocumentPane({
             {/* Vendor address, under the read vendor block. */}
             <Box sx={{ position: 'absolute', left: '6%', top: '16.6%', width: '46%' }}>
               <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', lineHeight: 1.45 }}>
-                2400 Bridgeway, Suite 210
+                {letterhead.street}
               </Typography>
               <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', lineHeight: 1.45 }}>
-                Sausalito, CA 94965 · United States
+                {letterhead.city}
               </Typography>
               <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', lineHeight: 1.45 }}>
-                ap@sierranetworks.example · +1 415 555 0114
+                {letterhead.contact}
               </Typography>
             </Box>
 
@@ -209,10 +211,10 @@ export function DocumentPane({
                 REMIT TO
               </Typography>
               <Typography variant="caption" sx={{ display: 'block', lineHeight: 1.5 }}>
-                Sierra Networks · Golden Gate Bank
+                {invoice.vendor} · {letterhead.bank}
               </Typography>
               <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', lineHeight: 1.45 }}>
-                Routing 121000248 · Account ••••4417
+                {letterhead.account}
               </Typography>
               <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', lineHeight: 1.45, mt: 0.75 }}>
                 Please quote the invoice number with payment.
@@ -256,7 +258,9 @@ export function DocumentPane({
                 display: 'block',
               }}
             >
-              Sierra Networks Inc. · Reg. 84-2199407 · Terms and conditions available on request
+              {invoice.vendor} · Reg.{' '}
+              {invoice.invoiceFields.find((f) => f.key === 'vendorTaxId')?.value ?? '—'} · Terms and
+              conditions available on request
             </Typography>
 
             {/* Field values, drawn where they live */}
