@@ -1,7 +1,7 @@
 import { StoreProvider, useStore } from './store';
 import { AppShell } from './components/shell';
 import { ScenarioSwitcher } from './components/ScenarioSwitcher';
-import { ProfileScreen, RoutingScreen, SignupScreen } from './screens/Onboarding';
+import { ProfileScreen, RoutingScreen, SignInScreen } from './screens/Onboarding';
 import { AskNeoScreen } from './screens/AskNeo';
 import { QueueScreen } from './screens/Queue';
 import { InvoiceDetailScreen } from './screens/InvoiceDetail';
@@ -16,7 +16,7 @@ function Router() {
   // The onboarding screens carry no app chrome.
   // Keyed on the staged address: a scenario applied while already on this screen
   // would otherwise leave the form holding its own local state.
-  if (screen === 'signup') return <SignupScreen key={profile.email} />;
+  if (screen === 'signin') return <SignInScreen key={profile.email} />;
   if (screen === 'routing') return <RoutingScreen />;
   if (screen === 'profile') return <ProfileScreen />;
 

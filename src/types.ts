@@ -5,7 +5,7 @@
 
 /* ── Onboarding ───────────────────────────────────────────────────────── */
 
-export type SignupMethod = 'google' | 'password';
+export type SignInMethod = 'google' | 'password';
 
 /** Which of the four routing paths in Signup PRD §3 the user came in on. */
 export type RoutePath = 'first-of-domain' | 'joined' | 'created-own' | 'invited';
@@ -20,7 +20,7 @@ export type DomainVerdict =
   | 'personal-provider';
 
 export type Screen =
-  | 'signup'
+  | 'signin'
   | 'routing'
   | 'profile'
   | 'ask-neo'

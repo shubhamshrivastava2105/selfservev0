@@ -69,10 +69,20 @@ function OnboardingFrame({
   );
 }
 
-/* ── Sign up ──────────────────────────────────────────────────────────── */
+/* ── Sign in ──────────────────────────────────────────────────────────── */
 
-export function SignupScreen() {
-  const { signUp, profile } = useStore();
+/**
+ * One way in.
+ *
+ * There is no sign-up screen and no sign-in screen, because a person arriving
+ * here does not know which of the two they are. The address settles it: a
+ * domain already on Neoflo takes you to its workspaces, and one that is not
+ * makes the organization on the way through. Asking somebody to pick between
+ * "create an account" and "log in" is asking them to answer a question the
+ * form is about to answer for them, and getting it wrong is a dead end.
+ */
+export function SignInScreen() {
+  const { signIn, profile } = useStore();
   // Empty in normal use, as a real signup form is. Seeded from the profile only
   // when a demo scenario has staged an address to show what happens to it.
   /**
@@ -99,17 +109,17 @@ export function SignupScreen() {
   const emailValid = /.+@.+\..+/.test(email);
   const { verdict, domain } = readDomain(email);
   const personalBlocked = emailValid && verdict === 'personal-provider';
-  const canSubmit =
-    emailValid &&
-    password.length >= 8 &&
-    !personalBlocked;
+  // A password is required and nothing more is said about it. A length rule
+  // belongs on a form that is setting one, and this form does not know yet
+  // whether it is setting one or checking one.
+  const canSubmit = emailValid && password.length > 0 && !personalBlocked;
 
   return (
     <OnboardingFrame>
       <Stack sx={{ gap: 3 }}>
         <Stack sx={{ gap: 0.5 }}>
           <Typography variant="h4" component="h1">
-            Create your account
+            Sign in to Neoflo
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Neoflo reads your invoices, checks them against your purchase orders and receipts, and
@@ -125,7 +135,7 @@ export function SignupScreen() {
           startIcon={<GoogleLogoIcon size={18} />}
           disabled={personalBlocked}
           onClick={() =>
-            signUp(
+            signIn(
               'google',
               nameFromEmail(email).first,
               nameFromEmail(email).last,
@@ -184,8 +194,8 @@ export function SignupScreen() {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             type={showPassword ? 'text' : 'password'}
-            status={touched && password.length < 8 ? 'error' : undefined}
-            helperText={touched && password.length < 8 ? 'At least 8 characters' : 'At least 8 characters.'}
+            status={touched && password.length === 0 ? 'error' : undefined}
+            helperText={touched && password.length === 0 ? 'Enter your password' : undefined}
             endAdornment={
               <IconButton
                 appearance="text"
@@ -209,19 +219,16 @@ export function SignupScreen() {
             setTouched(true);
             if (canSubmit) {
               const name = nameFromEmail(email);
-              signUp('password', name.first, name.last, email);
+              signIn('password', name.first, name.last, email);
             }
           }}
         >
-          Create account
+          Continue
         </Button>
 
         {/* An invited user never reaches this screen by choosing an invitation:
             they arrive on a tokenised link from an email, which this prototype
             has no routes for. The scenario switcher covers that path instead. */}
-        <Typography variant="caption" color="text.secondary" align="center">
-          You can rename your workspace at any time.
-        </Typography>
       </Stack>
     </OnboardingFrame>
   );
@@ -358,7 +365,7 @@ export function ProfileScreen() {
     'first-of-domain':
       profile.domainVerdict === 'personal-provider'
         ? `You signed up with a personal address, so ${profile.workspaceName} is your own organization. You own it, and you can rename it at any time.`
-        : `Nobody from ${profile.domain} had signed up before, so your organization and ${profile.workspaceName} were created as you signed in. You own both, and you can rename the workspace at any time.`,
+        : `Nobody from ${profile.domain} was on Neoflo yet, so your organization and ${profile.workspaceName} were created as you signed in. You own both, and you can rename the workspace at any time.`,
     joined: profile.pendingRequestFor
       ? `${profile.workspaceName} has been set up for you to work in, and your request to join ${profile.pendingRequestFor} has gone to its owner. You are not waiting on it.`
       : `You have joined ${profile.workspaceName}.`,

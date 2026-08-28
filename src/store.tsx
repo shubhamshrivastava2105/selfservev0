@@ -52,7 +52,7 @@ import type {
   MemoryPattern,
   RoutePath,
   Screen,
-  SignupMethod,
+  SignInMethod,
   WorkflowConfig,
   WorkflowRole,
   WorkspaceVisibility,
@@ -64,7 +64,7 @@ export interface Profile {
   firstName: string;
   lastName: string;
   email: string;
-  method: SignupMethod | null;
+  method: SignInMethod | null;
   /** What the form worked out about the address. */
   domainVerdict: DomainVerdict | null;
   domain: string;
@@ -101,7 +101,7 @@ interface Store {
   goTo: (screen: Screen) => void;
 
   profile: Profile;
-  signUp: (method: SignupMethod, firstName: string, lastName: string, email: string) => void;
+  signIn: (method: SignInMethod, firstName: string, lastName: string, email: string) => void;
   /** Routing resolves at authentication (Signup PRD §3), before the profile screen. */
   /** Arriving on an invite link, which skips routing entirely. */
   acceptInvite: (firstName: string, lastName: string, email: string) => void;
@@ -265,7 +265,7 @@ export function useStore(): Store {
 }
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
-  const [screen, setScreen] = React.useState<Screen>('signup');
+  const [screen, setScreen] = React.useState<Screen>('signin');
   const [profile, setProfile] = React.useState<Profile>({
     firstName: '',
     lastName: '',
@@ -439,7 +439,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   /* ── Onboarding ─────────────────────────────────────────────────────── */
 
-  const signUp = React.useCallback<Store['signUp']>((method, firstName, lastName, email) => {
+  const signIn = React.useCallback<Store['signIn']>((method, firstName, lastName, email) => {
     const { verdict, domain } = readDomain(email);
 
     // A personal address cannot form or join a tenant, because a tenant is keyed
@@ -1334,7 +1334,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         country: 'US',
         onboarded: false,
       });
-      setScreen('signup');
+      setScreen('signin');
     };
 
     reset();
@@ -1346,7 +1346,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           domain: '', routePath: null, workspaceName: '', pendingRequestFor: null,
           jobFunction: '', country: 'US', onboarded: false,
         });
-        setScreen('signup');
+        setScreen('signin');
         break;
 
       case 'signup-existing-tenant':
@@ -1537,7 +1537,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     screen,
     goTo,
     profile,
-    signUp,
+    signIn,
     acceptInvite,
     joinWorkspace,
     createOwnWorkspace,
