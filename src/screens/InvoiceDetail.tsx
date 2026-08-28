@@ -71,6 +71,8 @@ export function InvoiceDetailScreen() {
   // The stage, or its history. Documents live on the stages that carry them.
   const [showHistory, setShowHistory] = React.useState(false);
   const [selectedFieldKey, setSelectedFieldKey] = React.useState<string | null>(null);
+  /** A line the reader asked to see on the page. Only one selection at a time. */
+  const [selectedLineId, setSelectedLineId] = React.useState<string | null>(null);
   const [overrideTarget, setOverrideTarget] = React.useState<{ rule: string; label: string } | null>(null);
   const [reason, setReason] = React.useState('');
   const [rejectOpen, setRejectOpen] = React.useState(false);
@@ -394,12 +396,21 @@ export function InvoiceDetailScreen() {
                       invoice.invoiceFields.find((f) => f.key === selectedFieldKey) ?? null
                     }
                     onSelect={setSelectedFieldKey}
-                    readOnly={readOnly || lookingBack}
+                    selectedLineId={selectedLineId}
                   />
                   <ExtractedData
                     invoice={invoice}
                     selectedKey={selectedFieldKey}
-                    onSelect={setSelectedFieldKey}
+                    onSelect={(key) => {
+                      setSelectedFieldKey(key);
+                      if (key) setSelectedLineId(null);
+                    }}
+                    selectedLineId={selectedLineId}
+                    onSelectLine={(id) => {
+                      setSelectedLineId(id);
+                      if (id) setSelectedFieldKey(null);
+                    }}
+                    readOnly={readOnly || lookingBack}
                   />
                 </>
               )}

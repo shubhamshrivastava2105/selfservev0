@@ -75,8 +75,22 @@ export function SignupScreen() {
   const { signUp, profile } = useStore();
   // Empty in normal use, as a real signup form is. Seeded from the profile only
   // when a demo scenario has staged an address to show what happens to it.
-  const [firstName, setFirstName] = React.useState(profile.firstName);
-  const [lastName, setLastName] = React.useState(profile.lastName);
+  /**
+   * The name comes from the address, not from two more fields.
+   *
+   * A sign-in form asks for an email and a password. Everything else it can
+   * work out, and a name is the easiest of them — shubham.s@ is Shubham S until
+   * somebody says otherwise.
+   */
+  const nameFromEmail = (address: string): { first: string; last: string } => {
+    const local = address.split('@')[0] ?? '';
+    const parts = local
+      .split(/[._-]+/)
+      .filter(Boolean)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1));
+    if (parts.length === 0) return { first: SIGNED_IN.firstName, last: SIGNED_IN.lastName };
+    return { first: parts[0], last: parts.slice(1).join(' ') || '' };
+  };
   const [email, setEmail] = React.useState(profile.email);
   const [password, setPassword] = React.useState('');
   const [showPassword, setShowPassword] = React.useState(false);
@@ -86,8 +100,6 @@ export function SignupScreen() {
   const { verdict, domain } = readDomain(email);
   const personalBlocked = emailValid && verdict === 'personal-provider';
   const canSubmit =
-    firstName.trim() !== '' &&
-    lastName.trim() !== '' &&
     emailValid &&
     password.length >= 8 &&
     !personalBlocked;
@@ -115,8 +127,8 @@ export function SignupScreen() {
           onClick={() =>
             signUp(
               'google',
-              firstName || SIGNED_IN.firstName,
-              lastName || SIGNED_IN.lastName,
+              nameFromEmail(email).first,
+              nameFromEmail(email).last,
               email || SIGNED_IN.email,
             )
           }
@@ -126,28 +138,7 @@ export function SignupScreen() {
 
         <Divider>or</Divider>
 
-        {/* The name is captured on the form itself, so it exists before the
-            workspace that gets named after it (Signup PRD §2). */}
         <Stack sx={{ gap: 2 }}>
-          <Stack direction="row" sx={{ gap: 2 }}>
-            <TextField
-              label="First name"
-              value={firstName}
-              onChange={(event) => setFirstName(event.target.value)}
-              status={touched && firstName.trim() === '' ? 'error' : undefined}
-              helperText={touched && firstName.trim() === '' ? 'Required' : undefined}
-              fullWidth
-            />
-            <TextField
-              label="Last name"
-              value={lastName}
-              onChange={(event) => setLastName(event.target.value)}
-              status={touched && lastName.trim() === '' ? 'error' : undefined}
-              helperText={touched && lastName.trim() === '' ? 'Required' : undefined}
-              fullWidth
-            />
-          </Stack>
-
           <TextField
             label="Work email"
             placeholder="you@company.com"
@@ -216,7 +207,10 @@ export function SignupScreen() {
           disabled={personalBlocked}
           onClick={() => {
             setTouched(true);
-            if (canSubmit) signUp('password', firstName, lastName, email);
+            if (canSubmit) {
+              const name = nameFromEmail(email);
+              signUp('password', name.first, name.last, email);
+            }
           }}
         >
           Create account

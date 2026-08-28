@@ -99,6 +99,13 @@ export interface ExtractedField {
    * beside the evidence, rather than on the field itself.
    */
   region?: { page: number; x: number; y: number; w: number; h: number };
+  /**
+   * Set where the value is not on the document at all and was worked out from
+   * something else — a currency taken from the bill-to country, say. There is
+   * nothing to highlight and nothing was read, so it is put to the user as a
+   * suggestion rather than presented as a reading.
+   */
+  inferred?: { because: string };
 }
 
 /** How a line came out of matching, for the dot on its row. */
@@ -160,6 +167,11 @@ export interface MatchLine {
   itemNo: string;
   /** Where this line ended up, for the dot on its row. */
   state: LineMatchState;
+  /**
+   * How clearly the line was read off the document. A line is read like any
+   * other value, so it carries a score like any other value.
+   */
+  confidence: number;
 }
 
 export interface MetadataFinding {

@@ -1,6 +1,7 @@
 import * as React from 'react';
 import {
   Box,
+  Chip,
   Stack,
   Tab,
   Table,
@@ -10,10 +11,11 @@ import {
   TableHead,
   TableRow,
   Tabs,
+  TextField,
   Tooltip,
   Typography,
 } from '@neofloai/atoms';
-import { WarningIcon } from '@neofloai/atoms/icons';
+import { SparkleIcon, WarningIcon } from '@neofloai/atoms/icons';
 import { useStore } from '../../store';
 import { confidenceTone } from '../../components/common';
 import { money, num } from '../../engine';
@@ -30,21 +32,40 @@ function FieldRow({
   field,
   selected,
   onSelect,
+  invoiceId,
+  readOnly,
 }: {
   field: ExtractedField;
   selected: boolean;
   onSelect: () => void;
+  invoiceId: string;
+  readOnly?: boolean;
 }) {
-  const { config } = useStore();
+  const { config, editField } = useStore();
   const tone = confidenceTone(field.confidence, config.confidenceThreshold);
   const low = tone === 'amber' || tone === 'red';
+
+  /**
+   * Correcting happens here, in the table, and not in the callout on the
+   * document. The document is the evidence — you look at it to see what the
+   * page actually says — and the table is the record you are putting right.
+   */
+  const [draft, setDraft] = React.useState(field.value);
+  React.useEffect(() => setDraft(field.value), [field.value]);
+  const commit = () => {
+    if (draft !== field.value) editField(invoiceId, 'invoice', field.key, draft);
+  };
 
   return (
     <TableRow
       hover
       selected={selected}
       onClick={onSelect}
-      sx={{ cursor: field.region ? 'pointer' : 'default' }}
+      sx={{
+        cursor: field.region ? 'pointer' : 'default',
+        // A suggestion is the one row on this table that wants an answer.
+        backgroundColor: field.inferred && !field.editedFrom ? 'purple.subtle' : undefined,
+      }}
     >
       <TableCell>
         <Typography variant="body2">
@@ -56,14 +77,50 @@ function FieldRow({
           )}
         </Typography>
       </TableCell>
-      <TableCell>
+      <TableCell padding="none" sx={{ pr: 2 }}>
         <Stack direction="row" sx={{ gap: 1, alignItems: 'center' }}>
-          <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }}>
-            {field.value}
-          </Typography>
+          {/* Borderless until you are in it, so a column of these still reads
+              as values rather than as a form. */}
+          <TextField
+            aria-label={`${field.label}, currently ${field.value || 'empty'}`}
+            value={draft}
+            disabled={readOnly}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={commit}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                (event.target as HTMLInputElement).blur();
+              }
+              if (event.key === 'Escape') setDraft(field.value);
+            }}
+            onClick={(event) => event.stopPropagation()}
+            fullWidth
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+              '&:hover .MuiOutlinedInput-notchedOutline': { border: '1px solid' },
+              '&:focus-within .MuiOutlinedInput-notchedOutline': { border: '1px solid' },
+            }}
+          />
+          {/* Not read at all, but worked out. Named as such, because agreeing
+              to a suggestion and confirming a reading are different acts. */}
+          {field.inferred && (
+            <Tooltip title={field.inferred.because}>
+              <Box sx={{ flexShrink: 0 }}>
+                <Chip
+                  size="sm"
+                  variant="purple"
+                  icon={<SparkleIcon size={12} />}
+                  label="Suggested"
+                />
+              </Box>
+            </Tooltip>
+          )}
           {/* A mark, not a number: the number is on the document. */}
-          {low && (
-            <Tooltip title="Read with low confidence. Click to see it on the document.">
+          {low && !field.inferred && (
+            <Tooltip title="Read with low confidence. Click the row to see it on the document.">
               <Box sx={{ display: 'flex', color: tone === 'red' ? 'error.main' : 'warning.main' }}>
                 <WarningIcon size={14} />
               </Box>
@@ -80,10 +137,17 @@ export function ExtractedData({
   invoice,
   selectedKey,
   onSelect,
+  selectedLineId,
+  onSelectLine,
+  readOnly,
 }: {
   invoice: Invoice;
   selectedKey: string | null;
   onSelect: (key: string | null) => void;
+  selectedLineId: string | null;
+  onSelectLine: (id: string | null) => void;
+  /** A closed record, or an earlier stage being looked back at: values read. */
+  readOnly?: boolean;
 }) {
   const [tab, setTab] = React.useState<'metadata' | 'lines'>('metadata');
   const { config } = useStore();
@@ -121,6 +185,8 @@ export function ExtractedData({
                   <FieldRow
                     key={f.key}
                     field={f}
+                    invoiceId={invoice.id}
+                    readOnly={readOnly}
                     selected={selectedKey === f.key}
                     onSelect={() => onSelect(selectedKey === f.key ? null : f.key)}
                   />
@@ -141,15 +207,39 @@ export function ExtractedData({
                 </TableRow>
               </TableHead>
               <TableBody>
-                {invoice.lines.map((l) => (
-                  <TableRow key={l.id}>
-                    <TableCell sx={{ fontFamily: 'mono' }}>{l.itemNo}</TableCell>
-                    <TableCell>{l.description}</TableCell>
-                    <TableCell align="right">{num(l.invoiceQty)}</TableCell>
-                    <TableCell align="right">{money(l.invoiceUnitPrice, invoice.currency)}</TableCell>
-                    <TableCell align="right">{money(l.invoiceLineTotal, invoice.currency)}</TableCell>
-                  </TableRow>
-                ))}
+                {invoice.lines.map((l) => {
+                  const lineLow = l.confidence < config.confidenceThreshold;
+                  return (
+                    <TableRow
+                      key={l.id}
+                      hover
+                      selected={selectedLineId === l.id}
+                      // A line is read off the page like anything else, so it
+                      // points at the page like anything else.
+                      onClick={() => onSelectLine(selectedLineId === l.id ? null : l.id)}
+                      sx={{ cursor: 'pointer' }}
+                    >
+                      <TableCell sx={{ fontFamily: 'mono' }}>{l.itemNo}</TableCell>
+                      <TableCell>
+                        <Stack direction="row" sx={{ gap: 1, alignItems: 'center' }}>
+                          <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }}>
+                            {l.description}
+                          </Typography>
+                          {lineLow && (
+                            <Tooltip title="Read with low confidence. Click the row to see it on the document.">
+                              <Box sx={{ display: 'flex', color: 'warning.main' }}>
+                                <WarningIcon size={14} />
+                              </Box>
+                            </Tooltip>
+                          )}
+                        </Stack>
+                      </TableCell>
+                      <TableCell align="right">{num(l.invoiceQty)}</TableCell>
+                      <TableCell align="right">{money(l.invoiceUnitPrice, invoice.currency)}</TableCell>
+                      <TableCell align="right">{money(l.invoiceLineTotal, invoice.currency)}</TableCell>
+                    </TableRow>
+                  );
+                })}
                 <TableRow>
                   <TableCell />
                   <TableCell>

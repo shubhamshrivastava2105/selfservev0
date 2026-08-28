@@ -101,8 +101,9 @@ export const SCENARIOS: Scenario[] = [
   {
     id: 'extraction-low-confidence',
     group: 'Extraction',
-    label: 'Four fields below threshold',
-    detail: 'INV-77120. Four fields flagged below the threshold, and the queue says a person should look. Nothing is blocked.',
+    label: 'A value the invoice does not carry',
+    detail:
+      'INV-77120. Currency is printed nowhere on it, so it is proposed from the bill-to country and put up for review. Everything actually printed reads clearly.',
   },
   {
     id: 'extraction-attachments',

@@ -348,6 +348,11 @@ function invoiceFields(
   base = 97,
   /** Fields where the PO disagrees. Anything absent matches the invoice. */
   poOverrides: Record<string, string> = {},
+  /**
+   * Fields the document does not carry, mapped to why the value was proposed
+   * anyway. These get no region: there is nothing on the page to point at.
+   */
+  inferred: Record<string, string> = {},
 ): ExtractedField[] {
   const c = (k: string) => conf[k] ?? base;
   const rows: [string, string, string, boolean, boolean][] = [
@@ -369,7 +374,8 @@ function invoiceFields(
   return rows.map(([key, label, value, mandatory, learnable]) => ({
     ...field(key, label, value, c(key), mandatory, learnable),
     poValue: poOverrides[key] ?? value,
-    region: FIELD_REGIONS[key],
+    region: inferred[key] ? undefined : FIELD_REGIONS[key],
+    inferred: inferred[key] ? { because: inferred[key] } : undefined,
   }));
 }
 
@@ -412,6 +418,7 @@ function line(
   vat = 'US-EXEMPT',
   wht = 'US-NONE',
   poUnitPrice?: number,
+  confidence = 97,
 ): MatchLine {
   const poUnit = poUnitPrice ?? unitPrice;
   const invoiceLineTotal = Number((invoiceQty * unitPrice).toFixed(2));
@@ -419,6 +426,7 @@ function line(
   return {
     id,
     itemNo: `ILI-${id.replace(/\D/g, '').padStart(4, '0')}`,
+    confidence,
     description,
     invoiceQty,
     poQty,
@@ -672,7 +680,7 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
       {
         number: 'INV-77120',
         date: formatDate(at(1)),
-        vendor: 'Sierra Netwoks',
+        vendor: 'Sierra Networks',
         vendorCode: '760114882 (SN-4471)',
         vendorTaxId: '760114882 (SN-4471)',
         po: 'PO-US-77004',
@@ -683,7 +691,17 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
         remitTo: '1188 Alder Way, Bellevue WA 98004',
         taxCode: 'US-WA-SALES-10.25',
       },
-      { number: 61, total: 68, vendor: 74, date: 79 },
+      // A clean digital invoice: everything printed on it is read clearly. The
+      // only uncertain value is the one that is not printed at all.
+      { currency: 58 },
+      97,
+      {},
+      {
+        // Not printed anywhere on this invoice, which is common enough. The
+        // value is a proposal from the bill-to country, offered for a person to
+        // agree with rather than presented as something that was read.
+        currency: 'Not printed on this invoice. Proposed from the bill-to address, which is in the United States.',
+      },
     ),
     poFields: poFields(
       { number: 'PO-US-77004', vendor: 'Sierra Networks', currency: 'USD', total: '3,940.24' },
@@ -692,9 +710,18 @@ const SEED_INVOICES: Omit<Invoice, 'grnLines' | 'erp'>[] = [
     grnFields: [],
     poSource: 'zoho',
     grnSource: 'none',
+    /**
+     * Six lines rather than two. An extraction screen with a two-row table does
+     * not look like an invoice anybody has actually received, and this is the
+     * record the extraction scenarios open. The totals still add to 3,940.24.
+     */
     lines: [
-      line('l1', 'Network switches — 48 port', 4, 4, null, 720.0, '6400 · IT and software'),
-      line('l2', 'Install labor', 8, 8, null, 132.53, '6400 · IT and software'),
+      line('l1', 'Network switch — 48 port PoE+', 4, 4, null, 720.0, '6400 · IT and software'),
+      line('l2', 'SFP+ transceiver — 10GbE SR', 8, 8, null, 41.5, '6400 · IT and software'),
+      line('l3', 'Patch cable — Cat6A, 3 ft', 24, 24, null, 4.85, '6400 · IT and software'),
+      line('l4', 'Rack shelf — 1U vented', 2, 2, null, 38.0, '6500 · Repairs and maintenance'),
+      line('l5', 'Cable management arm', 4, 4, null, 22.6, '6500 · Repairs and maintenance'),
+      line('l6', 'Install labor — on site', 8, 8, null, 55.68, '6400 · IT and software'),
     ],
     attachments: [
       { name: 'faktur-pajak-77120.pdf', kind: 'Tax document' },
